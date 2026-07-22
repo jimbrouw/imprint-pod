@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { QrCode, Search, ArrowRight, Palette, AlertCircle } from 'lucide-react';
+import { ArrowRight, WarningCircle } from '@phosphor-icons/react';
+import { Logo } from '@/components/ui/Logo';
+import { Button } from '@/components/ui/Button';
 
 export default function PublicEventClaimPage() {
   const params = useParams();
@@ -25,7 +27,7 @@ export default function PublicEventClaimPage() {
         } else {
           setError('Event not found or inactive');
         }
-      } catch (err) {
+      } catch {
         setError('Failed to load event');
       } finally {
         setLoading(false);
@@ -68,37 +70,38 @@ export default function PublicEventClaimPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400">
-        Loading event page...
+      <div className="min-h-[100dvh] bg-zinc-950 flex items-center justify-center text-zinc-500 text-sm">
+        Loading event page…
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-4 flex items-center justify-center">
-      <div className="w-full max-w-md bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl backdrop-blur-md text-center">
-        <div className="w-16 h-16 bg-gradient-to-tr from-sky-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-sky-500/20 mx-auto mb-4">
-          <Palette className="w-8 h-8 text-white" />
+    <div className="min-h-[100dvh] bg-zinc-950 text-zinc-50 p-4 flex items-center justify-center">
+      <div className="w-full max-w-md animate-fade-up text-center">
+        <div className="flex justify-center">
+          <Logo size="lg" />
+        </div>
+        <div className="mx-auto w-fit">
+          <h1 className="text-3xl tracking-tighter font-semibold text-zinc-50 mt-6 mb-2">
+            {eventData?.title || 'Live Artist Portrait'}
+          </h1>
+          <p className="text-sm text-zinc-500 mb-10 leading-relaxed max-w-[36ch]">
+            Enter your 6-character claim code from the artist to view and download your portrait.
+          </p>
         </div>
 
-        <h1 className="text-2xl font-extrabold text-white tracking-tight mb-1">
-          {eventData?.title || 'Live Artist Portrait'}
-        </h1>
-        <p className="text-sm text-slate-400 mb-8">
-          Enter your 6-character claim code from the artist to view and download your portrait.
-        </p>
-
         {error && (
-          <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/30 rounded-2xl text-rose-400 text-sm flex items-center justify-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
+          <div className="mb-6 p-4 bg-rose-950/40 border border-rose-900/60 rounded-2xl text-rose-300 text-sm flex items-center justify-center gap-2">
+            <WarningCircle size={16} weight="bold" className="shrink-0" />
             <span>{error}</span>
           </div>
         )}
 
-        <form onSubmit={handleClaim} className="space-y-4">
+        <form onSubmit={handleClaim} className="space-y-4 text-left">
           <div>
-            <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
-              6-Character Claim Code
+            <label className="block text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2 text-center">
+              6-character claim code
             </label>
             <input
               type="text"
@@ -106,23 +109,19 @@ export default function PublicEventClaimPage() {
               required
               value={claimCode}
               onChange={(e) => setClaimCode(e.target.value.toUpperCase())}
-              placeholder="e.g. 4K7M2Q"
-              className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-4 text-center font-mono text-2xl font-extrabold tracking-widest text-sky-400 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-sky-500 uppercase"
+              placeholder="4K7M2Q"
+              className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl py-4 text-center font-mono text-2xl font-semibold tracking-widest text-ember-400 placeholder-zinc-700 focus:outline-none focus:ring-2 focus:ring-ember-600/50 uppercase"
             />
           </div>
 
-          <button
-            type="submit"
-            disabled={submitting || claimCode.length !== 6}
-            className="w-full bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-bold py-4 px-6 rounded-2xl shadow-xl shadow-sky-500/20 text-base transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-          >
-            {submitting ? 'Finding Portrait...' : 'Find My Portrait'}
-            <ArrowRight className="w-5 h-5" />
-          </button>
+          <Button type="submit" disabled={submitting || claimCode.length !== 6} className="w-full !py-4 text-base">
+            {submitting ? 'Finding portrait…' : 'Find my portrait'}
+            <ArrowRight size={18} weight="bold" />
+          </Button>
         </form>
 
-        <p className="text-xs text-slate-500 mt-6">
-          Alternatively, scan the per-artwork QR code directly from the artist's screen.
+        <p className="text-xs text-zinc-600 mt-8">
+          Or just scan the QR code shown on the artist's screen.
         </p>
       </div>
     </div>

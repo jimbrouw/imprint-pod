@@ -1,11 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import Link from 'next/link';
-import { CheckCircle2, Download, Package, Mail, ArrowRight, RefreshCw, AlertCircle } from 'lucide-react';
-
-import { Suspense } from 'react';
+import { CheckCircle, DownloadSimple, Package, EnvelopeSimple, ArrowsClockwise } from '@phosphor-icons/react';
+import { Button } from '@/components/ui/Button';
 
 function CheckoutSuccessContent() {
   const searchParams = useSearchParams();
@@ -13,18 +11,16 @@ function CheckoutSuccessContent() {
 
   const [loading, setLoading] = useState(true);
   const [orderDetails, setOrderDetails] = useState<any>(null);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!sessionId) {
       setLoading(false);
       return;
     }
-    
-    // Simulate a successful network verification delay
+
     setTimeout(() => {
       setOrderDetails({
-        downloadUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop',
+        downloadUrl: 'https://picsum.photos/seed/imprint-portrait/800/1000',
         orderType: 'digital',
         productSize: null,
         fulfilmentStatus: 'Submitted',
@@ -35,64 +31,63 @@ function CheckoutSuccessContent() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-400 gap-3">
-        <RefreshCw className="w-8 h-8 animate-spin text-sky-400" />
-        <p>Verifying payment with Stripe...</p>
+      <div className="min-h-[100dvh] bg-zinc-950 flex flex-col items-center justify-center text-zinc-500 gap-3 text-sm">
+        <ArrowsClockwise size={28} weight="bold" className="text-ember-400 animate-spin" />
+        <p>Verifying payment with Stripe…</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-8 flex items-center justify-center">
-      <div className="w-full max-w-lg bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl backdrop-blur-md text-center space-y-6">
-        <div className="w-16 h-16 bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-3xl flex items-center justify-center mx-auto shadow-xl shadow-emerald-500/10">
-          <CheckCircle2 className="w-10 h-10" />
+    <div className="min-h-[100dvh] bg-zinc-950 text-zinc-50 p-4 sm:p-8 flex items-center justify-center">
+      <div className="w-full max-w-lg animate-fade-up text-center space-y-6">
+        <div className="w-16 h-16 bg-emerald-500/15 border border-emerald-500/25 text-emerald-400 rounded-3xl flex items-center justify-center mx-auto">
+          <CheckCircle size={36} weight="bold" />
         </div>
 
         <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-white">Payment Confirmed!</h1>
-          <p className="text-sm text-slate-400 mt-1">Thank you for supporting your live portrait artist.</p>
+          <h1 className="text-3xl tracking-tighter font-semibold text-zinc-50">Payment confirmed</h1>
+          <p className="text-sm text-zinc-500 mt-1">Thank you for supporting your live portrait artist.</p>
         </div>
 
-        {/* Digital Download Action */}
         {orderDetails?.downloadUrl ? (
-          <div className="bg-slate-950 p-6 rounded-2xl border border-slate-800 space-y-4">
-            <div className="flex items-center justify-center gap-2 text-xs font-semibold text-emerald-400 uppercase tracking-wider">
-              <Download className="w-4 h-4" /> Ready for High-Res Download
+          <div className="border border-zinc-800 rounded-2xl p-6 space-y-4">
+            <div className="flex items-center justify-center gap-2 text-xs font-medium text-emerald-400 uppercase tracking-wider">
+              <DownloadSimple size={16} weight="bold" /> Ready to download
             </div>
 
-            <a
-              href={orderDetails.downloadUrl}
-              download
-              className="w-full bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-bold py-4 px-6 rounded-2xl shadow-xl shadow-sky-500/20 text-base transition-all flex items-center justify-center gap-2"
-            >
-              <Download className="w-5 h-5" /> Download Full-Resolution Artwork
+            <a href={orderDetails.downloadUrl} download>
+              <Button className="w-full !py-4 text-base">
+                <DownloadSimple size={18} weight="bold" /> Download your picture
+              </Button>
             </a>
           </div>
         ) : (
-          <div className="bg-slate-950 p-6 rounded-2xl border border-slate-800 text-slate-400 text-sm">
-            Processing digital download link...
+          <div className="border border-zinc-800 rounded-2xl p-6 text-zinc-500 text-sm">
+            Getting your download ready…
           </div>
         )}
 
-        {/* Print Order Status if applicable */}
         {orderDetails?.orderType === 'print' && (
-          <div className="bg-slate-950 p-6 rounded-2xl border border-slate-800 text-left space-y-3">
-            <div className="flex items-center justify-between text-xs font-semibold text-indigo-400 uppercase tracking-wider">
-              <span className="flex items-center gap-1.5"><Package className="w-4 h-4" /> Print Fulfillment</span>
-              <span className="px-2.5 py-0.5 bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 rounded-full">
+          <div className="border border-zinc-800 rounded-2xl p-6 text-left space-y-3">
+            <div className="flex items-center justify-between text-xs font-medium text-zinc-300 uppercase tracking-wider">
+              <span className="flex items-center gap-1.5">
+                <Package size={16} weight="bold" /> Your print
+              </span>
+              <span className="px-2.5 py-0.5 bg-ember-500/10 border border-ember-500/25 text-ember-400 rounded-full">
                 {orderDetails.fulfilmentStatus || 'Submitted'}
               </span>
             </div>
 
-            <p className="text-xs text-slate-300">
-              Your <span className="font-bold text-white">{orderDetails.productSize}</span> print order has been submitted to our archival print laboratory (Prodigi). Tracking updates will be sent via email.
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              Your <span className="font-semibold text-zinc-50">{orderDetails.productSize}</span> print is being made and
+              posted to you. We'll email you when it's on its way.
             </p>
           </div>
         )}
 
-        <div className="flex items-center justify-center gap-2 text-xs text-slate-500 pt-4 border-t border-slate-800">
-          <Mail className="w-4 h-4 text-slate-400" /> Receipt sent to your email address
+        <div className="flex items-center justify-center gap-2 text-xs text-zinc-600 pt-4 border-t border-zinc-800/80">
+          <EnvelopeSimple size={16} weight="bold" /> Receipt sent to your email address
         </div>
       </div>
     </div>
@@ -101,12 +96,14 @@ function CheckoutSuccessContent() {
 
 export default function CheckoutSuccessPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-400 gap-3">
-        <RefreshCw className="w-8 h-8 animate-spin text-sky-400" />
-        <p>Loading checkout session...</p>
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div className="min-h-[100dvh] bg-zinc-950 flex flex-col items-center justify-center text-zinc-500 gap-3 text-sm">
+          <ArrowsClockwise size={28} weight="bold" className="text-ember-400 animate-spin" />
+          <p>Loading checkout session…</p>
+        </div>
+      }
+    >
       <CheckoutSuccessContent />
     </Suspense>
   );

@@ -4,7 +4,6 @@ import { v } from 'convex/values';
 
 export const createEvent = mutation({
   args: {
-    artistId: v.string(),
     title: v.string(),
     eventDate: v.optional(v.string()),
     digitalPrice: v.number(),
@@ -12,9 +11,14 @@ export const createEvent = mutation({
     currency: v.union(v.literal('gbp'), v.literal('usd'), v.literal('eur')),
   },
   handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error('Unauthenticated call to createEvent');
+    }
+
     const slug = `${args.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Math.random().toString(36).substring(2, 6)}`;
     const eventId = await ctx.db.insert('events', {
-      artistId: args.artistId,
+      artistId: identity.subject,
       title: args.title,
       eventDate: args.eventDate,
       slug,
@@ -29,11 +33,16 @@ export const createEvent = mutation({
 });
 
 export const getArtistEvents = query({
-  args: { artistId: v.string() },
-  handler: async (ctx, args) => {
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error('Unauthenticated call to getArtistEvents');
+    }
+
     return await ctx.db
       .query('events')
-      .withIndex('by_artist', (q) => q.eq('artistId', args.artistId))
+      .withIndex('by_artist', (q) => q.eq('artistId', identity.subject))
       .order('desc')
       .collect();
   },

@@ -1,18 +1,18 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../../../../convex/_generated/api';
 
 import { generateQRCodeDataUrl } from '@/lib/qr';
-import { ArrowLeft, Upload, Check, Zap, QrCode, Copy, RefreshCw, AlertCircle } from 'lucide-react';
+import { ArrowLeft, UploadSimple, Check, Lightning, ArrowsClockwise, WarningCircle } from '@phosphor-icons/react';
+import { Button } from '@/components/ui/Button';
 
 export default function iPadUploadTerminalPage() {
   const params = useParams();
   const searchParams = useSearchParams();
-  const router = useRouter();
 
   const eventId = params.eventId as string;
   const initialCustomerId = searchParams.get('customerId');
@@ -20,31 +20,29 @@ export default function iPadUploadTerminalPage() {
   const [customerName, setCustomerName] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewSrc, setPreviewSrc] = useState<string | null>(null);
-  
+
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStep, setUploadStep] = useState<string | null>(null);
-  
+
   const [completedClaimCode, setCompletedClaimCode] = useState<string | null>(null);
   const [completedQrUrl, setCompletedQrUrl] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const presignArtworkUpload = useMutation(api.artworks.presignArtworkUpload);
   const completePreview = useMutation(api.artworks.completePreview);
-  
+
   const event = useQuery(api.events.getEventBySlug, { slug: eventId });
 
   useEffect(() => {
     if (initialCustomerId) {
-      // Pre-fill customer name from localStorage demo data
       try {
         const raw = localStorage.getItem(`demo_customers_${eventId}`);
         if (raw) {
-          const customers = JSON.parse(raw) as { id: string; name: string }[];
-          const match = customers.find((c) => c.id === initialCustomerId);
+          const customersList = JSON.parse(raw) as { id: string; name: string }[];
+          const match = customersList.find((c) => c.id === initialCustomerId);
           if (match) setCustomerName(match.name);
         }
       } catch {
@@ -72,7 +70,6 @@ export default function iPadUploadTerminalPage() {
     setPreviewSrc(objectUrl);
   };
 
-  // Client-side image resize helper to create ~200KB preview image for lightning upload
   const createPreviewBlob = (file: File): Promise<Blob> => {
     return new Promise((resolve, reject) => {
       const img = new Image();
@@ -108,7 +105,6 @@ export default function iPadUploadTerminalPage() {
     });
   };
 
-
   const handleFastUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedFile || !customerName.trim()) {
@@ -119,26 +115,24 @@ export default function iPadUploadTerminalPage() {
     setUploading(true);
     setError(null);
     setUploadProgress(10);
-    setUploadStep('Generating fast preview...');
+    setUploadStep('Generating fast preview…');
 
     try {
-      // 1. Generate fast ~200KB preview blob
       const previewBlob = await createPreviewBlob(selectedFile);
       setUploadProgress(25);
-      setUploadStep('Requesting presigned upload tokens...');
+      setUploadStep('Requesting presigned upload token…');
 
-      if (!event) throw new Error("Event not loaded");
-      
+      if (!event) throw new Error('Event not loaded');
+
       const { uploadUrl, artworkId, claimCode, claimToken } = await presignArtworkUpload({
         eventId: event._id,
-        artistId: 'demo-artist',
         customerName: customerName.trim(),
         mimeType: previewBlob.type,
         byteSize: previewBlob.size,
       });
 
       setUploadProgress(50);
-      setUploadStep('Uploading image...');
+      setUploadStep('Uploading image…');
 
       const result = await fetch(uploadUrl, {
         method: 'POST',
@@ -147,13 +141,10 @@ export default function iPadUploadTerminalPage() {
       });
       const { storageId } = await result.json();
 
-      await completePreview({
-        artworkId,
-        storageId,
-      });
+      await completePreview({ artworkId, storageId });
 
       setUploadProgress(75);
-      setUploadStep('Finalizing claim QR code...');
+      setUploadStep('Finalizing claim QR code…');
 
       const artworkClaimUrl = `${window.location.origin}/artwork/${claimToken}`;
       const qrDataUrl = await generateQRCodeDataUrl(artworkClaimUrl);
@@ -161,8 +152,7 @@ export default function iPadUploadTerminalPage() {
       setCompletedClaimCode(claimCode);
       setCompletedQrUrl(qrDataUrl);
       setUploadProgress(100);
-      setUploadStep('Done! Artwork claimable now.');
-
+      setUploadStep('Done — artwork claimable now.');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Upload failed');
     } finally {
@@ -182,72 +172,66 @@ export default function iPadUploadTerminalPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-8 flex items-center justify-center">
-      <div className="w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl">
-        {/* Top Header */}
+    <div className="min-h-[100dvh] bg-zinc-950 text-zinc-50 p-4 sm:p-8 flex items-center justify-center">
+      <div className="w-full max-w-2xl bg-zinc-900/60 border border-zinc-800 rounded-3xl p-6 sm:p-8">
         <div className="flex items-center justify-between mb-6">
           <Link
             href={`/events/${eventId}`}
-            className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-slate-200 transition-colors"
+            className="inline-flex items-center gap-2 text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
           >
-            <ArrowLeft className="w-4 h-4" /> Exit Terminal
+            <ArrowLeft size={16} weight="bold" /> Back to event
           </Link>
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-sky-500/10 border border-sky-500/20 text-sky-400 rounded-full text-xs font-semibold">
-            <Zap className="w-3.5 h-3.5" /> &lt;30s Speed Handoff
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-ember-500/10 border border-ember-500/25 text-ember-400 rounded-full text-xs font-medium">
+            <Lightning size={14} weight="fill" /> Ready in under a minute
           </span>
         </div>
 
         {error && (
-          <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/30 rounded-2xl text-rose-400 text-sm flex items-center gap-3">
-            <AlertCircle className="w-5 h-5 shrink-0" />
+          <div className="mb-6 p-4 bg-rose-950/40 border border-rose-900/60 rounded-2xl text-rose-300 text-sm flex items-center gap-3">
+            <WarningCircle size={18} weight="bold" className="shrink-0" />
             <span>{error}</span>
           </div>
         )}
 
-        {/* Success Handoff Screen */}
         {completedClaimCode && completedQrUrl ? (
-          <div className="text-center space-y-6 animate-fadeIn">
-            <div className="w-14 h-14 bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-2xl flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/10">
-              <Check className="w-8 h-8" />
+          <div className="text-center space-y-6 animate-fade-up">
+            <div className="w-14 h-14 bg-emerald-500/15 border border-emerald-500/25 text-emerald-400 rounded-2xl flex items-center justify-center mx-auto">
+              <Check size={28} weight="bold" />
             </div>
 
             <div>
-              <h2 className="text-2xl font-bold text-white">Portrait Ready for Handoff!</h2>
-              <p className="text-sm text-slate-400 mt-1">Customer can scan artwork QR or enter 6-character code</p>
+              <h2 className="text-2xl font-semibold tracking-tight text-zinc-50">All done — it's ready for them</h2>
+              <p className="text-sm text-zinc-500 mt-1">Have them scan this code, or just read out the 6 characters below</p>
             </div>
 
-            <div className="bg-slate-950 p-6 rounded-3xl border border-slate-800 flex flex-col sm:flex-row items-center justify-center gap-6">
-              <div className="bg-white p-3 rounded-2xl shadow-lg shrink-0">
+            <div className="bg-zinc-950 p-6 rounded-3xl border border-zinc-800 flex flex-col sm:flex-row items-center justify-center gap-6">
+              <div className="bg-zinc-50 p-3 rounded-2xl shrink-0">
                 <img src={completedQrUrl} alt="Per-artwork QR" className="w-40 h-40" />
               </div>
 
               <div className="text-left space-y-3">
                 <div>
-                  <p className="text-xs text-slate-400 font-medium">Customer</p>
-                  <p className="text-lg font-bold text-white">{customerName}</p>
+                  <p className="text-xs text-zinc-500 font-medium">Customer</p>
+                  <p className="text-lg font-semibold text-zinc-50">{customerName}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-slate-400 font-medium">Fallback Claim Code</p>
-                  <p className="text-3xl font-mono font-extrabold text-sky-400 tracking-wider">
+                  <p className="text-xs text-zinc-500 font-medium">Or give them this code</p>
+                  <p className="text-3xl font-mono font-semibold text-ember-400 tracking-wider">
                     {completedClaimCode}
                   </p>
                 </div>
               </div>
             </div>
 
-            <button
-              onClick={handleResetForNext}
-              className="w-full bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-bold py-4 px-6 rounded-2xl shadow-xl shadow-sky-500/20 flex items-center justify-center gap-2 text-base transition-all"
-            >
-              <RefreshCw className="w-5 h-5" /> Draw & Upload Next Customer
-            </button>
+            <Button onClick={handleResetForNext} className="w-full !py-4 text-base">
+              <ArrowsClockwise size={20} weight="bold" /> Start the next one
+            </Button>
           </div>
         ) : (
-          /* Upload Form */
           <form onSubmit={handleFastUpload} className="space-y-6">
             <div>
-              <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
-                1. Customer First Name
+              <label className="block text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2">
+                1. Customer first name
               </label>
               <input
                 type="text"
@@ -255,13 +239,13 @@ export default function iPadUploadTerminalPage() {
                 value={customerName}
                 onChange={(e) => setCustomerName(e.target.value)}
                 placeholder="e.g. Sarah"
-                className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-3.5 px-4 text-base text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500"
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-2xl py-3.5 px-4 text-base text-zinc-50 placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-ember-600/50"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
-                2. Select Artwork (Exported PNG/JPEG)
+              <label className="block text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2">
+                2. Choose the finished picture
               </label>
 
               <input
@@ -274,24 +258,24 @@ export default function iPadUploadTerminalPage() {
 
               <div
                 onClick={() => fileInputRef.current?.click()}
-                className="border-2 border-dashed border-slate-800 hover:border-sky-500/50 bg-slate-950/60 rounded-2xl p-6 text-center cursor-pointer transition-all flex flex-col items-center justify-center min-h-[180px]"
+                className="border-2 border-dashed border-zinc-800 hover:border-ember-600/50 bg-zinc-950/60 rounded-2xl p-6 text-center cursor-pointer transition-colors flex flex-col items-center justify-center min-h-[180px]"
               >
                 {previewSrc ? (
                   <div className="relative group">
                     <img
                       src={previewSrc}
                       alt="Portrait preview"
-                      className="max-h-48 rounded-xl object-contain shadow-md"
+                      className="max-h-48 rounded-xl object-contain"
                     />
-                    <div className="mt-3 text-xs text-sky-400 font-medium">Tap to change image</div>
+                    <div className="mt-3 text-xs text-ember-400 font-medium">Tap to change image</div>
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    <div className="w-12 h-12 bg-sky-500/10 text-sky-400 rounded-xl flex items-center justify-center mx-auto">
-                      <Upload className="w-6 h-6" />
+                    <div className="w-12 h-12 bg-ember-500/10 text-ember-400 rounded-xl flex items-center justify-center mx-auto">
+                      <UploadSimple size={24} weight="bold" />
                     </div>
-                    <p className="text-sm font-semibold text-slate-200">Tap to select Procreate portrait export</p>
-                    <p className="text-xs text-slate-500">PNG or JPEG up to 25MB</p>
+                    <p className="text-sm font-medium text-zinc-300">Tap to choose your finished drawing</p>
+                    <p className="text-xs text-zinc-600">PNG or JPEG up to 25MB</p>
                   </div>
                 )}
               </div>
@@ -299,27 +283,27 @@ export default function iPadUploadTerminalPage() {
 
             {uploading && (
               <div className="space-y-2 pt-2">
-                <div className="flex items-center justify-between text-xs text-slate-400">
+                <div className="flex items-center justify-between text-xs text-zinc-500">
                   <span>{uploadStep}</span>
                   <span className="font-mono">{uploadProgress}%</span>
                 </div>
-                <div className="w-full bg-slate-950 rounded-full h-2 overflow-hidden border border-slate-800">
+                <div className="w-full bg-zinc-950 rounded-full h-2 overflow-hidden border border-zinc-800">
                   <div
-                    className="bg-gradient-to-r from-sky-500 to-indigo-500 h-full transition-all duration-300"
+                    className="bg-ember-500 h-full transition-all duration-300 ease-spring"
                     style={{ width: `${uploadProgress}%` }}
                   />
                 </div>
               </div>
             )}
 
-            <button
+            <Button
               type="submit"
               disabled={uploading || !selectedFile || !customerName.trim()}
-              className="w-full bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-bold py-4 px-6 rounded-2xl shadow-xl shadow-sky-500/20 text-base transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+              className="w-full !py-4 text-base"
             >
-              {uploading ? 'Uploading (<30s)...' : 'Upload Preview & Finish'}
-              <Zap className="w-5 h-5" />
-            </button>
+              {uploading ? 'Uploading…' : 'Upload the picture'}
+              <Lightning size={20} weight="fill" />
+            </Button>
           </form>
         )}
       </div>

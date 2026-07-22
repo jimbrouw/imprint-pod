@@ -11,12 +11,16 @@ export const generateUploadUrl = mutation({
 export const presignArtworkUpload = mutation({
   args: {
     eventId: v.id('events'),
-    artistId: v.string(),
     customerName: v.string(),
     mimeType: v.string(),
     byteSize: v.number(),
   },
   handler: async (ctx, args) => {
+    const event = await ctx.db.get(args.eventId);
+    if (!event) {
+      throw new Error('Event not found');
+    }
+
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     let claimCode = '';
     for (let i = 0; i < 6; i++) {
@@ -35,7 +39,7 @@ export const presignArtworkUpload = mutation({
 
     const artworkId = await ctx.db.insert('artworks', {
       customerId,
-      artistId: args.artistId,
+      artistId: event.artistId,
       mimeType: args.mimeType,
       byteSize: args.byteSize,
       originalReady: false,

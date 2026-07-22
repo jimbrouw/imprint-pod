@@ -1,15 +1,16 @@
 'use client';
 
 import { useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import { useQuery } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
-import { Download, ShoppingBag, Check, ShieldCheck, Sparkles, AlertCircle } from 'lucide-react';
+import { DownloadSimple, ShoppingBag, Check, ShieldCheck, Sparkle, WarningCircle } from '@phosphor-icons/react';
 import { ProductSize, ShippingAddress } from '@/lib/types';
+import { Button } from '@/components/ui/Button';
+import { Skeleton } from '@/components/ui/Skeleton';
 
 export default function ArtworkPurchasePage() {
   const params = useParams();
-  const router = useRouter();
   const claimToken = params.claimToken as string;
 
   const artworkData = useQuery(api.artworks.getArtworkByToken, { claimToken });
@@ -17,7 +18,6 @@ export default function ArtworkPurchasePage() {
   const fetchError = artworkData === null ? 'Artwork claim not found' : null;
   const [error, setError] = useState<string | null>(null);
 
-  // Print Form State
   const [selectedTab, setSelectedTab] = useState<'digital' | 'print'>('digital');
   const [selectedSize, setSelectedSize] = useState<ProductSize>('A4');
   const [shipping, setShipping] = useState<ShippingAddress>({
@@ -29,11 +29,10 @@ export default function ArtworkPurchasePage() {
   });
   const [submittingCheckout, setSubmittingCheckout] = useState(false);
 
-  const handleCheckout = async (type: 'digital' | 'print') => {
+  const handleCheckout = async (_type: 'digital' | 'print') => {
     setSubmittingCheckout(true);
     setError(null);
 
-    // Simulate checkout process
     setTimeout(() => {
       const baseUrl = window.location.origin;
       window.location.href = `${baseUrl}/checkout/success?session_id=mock_session_from_convex`;
@@ -42,19 +41,27 @@ export default function ArtworkPurchasePage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400">
-        Loading artwork...
+      <div className="min-h-[100dvh] bg-zinc-950 grid grid-cols-1 lg:grid-cols-2">
+        <div className="p-8 flex items-center justify-center">
+          <Skeleton className="w-full max-w-sm aspect-[3/4] rounded-2xl" />
+        </div>
+        <div className="p-8 space-y-4 flex flex-col justify-center">
+          <Skeleton className="h-4 w-32" />
+          <Skeleton className="h-10 w-3/4" />
+          <Skeleton className="h-14 w-full" />
+          <Skeleton className="h-14 w-full" />
+        </div>
       </div>
     );
   }
 
   if (fetchError || !artworkData) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 max-w-md text-center">
-          <AlertCircle className="w-12 h-12 text-rose-500 mx-auto mb-4" />
-          <h2 className="text-xl font-bold text-white mb-2">Unable to Load Artwork</h2>
-          <p className="text-sm text-slate-400">{fetchError || 'Invalid artwork claim token'}</p>
+      <div className="min-h-[100dvh] bg-zinc-950 flex items-center justify-center p-4">
+        <div className="border border-zinc-800 rounded-3xl p-8 max-w-md text-center">
+          <WarningCircle size={40} weight="bold" className="text-rose-400 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-zinc-50 mb-2">Unable to load artwork</h2>
+          <p className="text-sm text-zinc-500">{fetchError || 'Invalid artwork claim token'}</p>
         </div>
       </div>
     );
@@ -66,165 +73,149 @@ export default function ArtworkPurchasePage() {
   const currSymbol = currency === 'gbp' ? '£' : currency === 'usd' ? '$' : '€';
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-8 flex items-center justify-center">
-      <div className="w-full max-w-4xl bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl backdrop-blur-md grid grid-cols-1 md:grid-cols-2 gap-8">
-        
-        {/* Left: Artwork Preview */}
-        <div className="flex flex-col items-center justify-center">
-          <div className="relative w-full max-w-sm aspect-[3/4] bg-slate-950 rounded-2xl overflow-hidden border border-slate-800 shadow-2xl flex items-center justify-center p-2">
-            <img
-              src={previewUrl || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop'}
-              alt={`${customerName}'s Live Portrait`}
-              className="w-full h-full object-cover rounded-xl opacity-80"
-            />
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/40 p-4 text-center">
-              <Sparkles className="w-8 h-8 text-sky-400 mb-2 opacity-80" />
-              <p className="text-sm font-bold text-white tracking-widest uppercase">Demo Artwork</p>
-            </div>
-            <div className="absolute bottom-3 left-3 right-3 bg-slate-900/80 backdrop-blur-md border border-slate-800/80 rounded-xl py-2 px-3 text-center">
-              <p className="text-xs text-slate-400">{eventTitle}</p>
-              <p className="text-sm font-bold text-white">{customerName}'s Portrait</p>
-            </div>
+    <div className="min-h-[100dvh] bg-zinc-950 text-zinc-50 grid grid-cols-1 lg:grid-cols-[1fr_1.05fr]">
+      {/* Left: artwork preview */}
+      <div className="relative flex items-center justify-center p-8 sm:p-16 bg-zinc-900/40 border-b lg:border-b-0 lg:border-r border-zinc-800/80">
+        <div className="w-full max-w-sm aspect-[3/4] bg-zinc-950 rounded-2xl overflow-hidden border border-zinc-800 relative">
+          <img
+            src={previewUrl || 'https://picsum.photos/seed/imprint-portrait/800/1000'}
+            alt={`${customerName}'s live portrait`}
+            className="w-full h-full object-cover"
+          />
+          <div className="absolute bottom-3 left-3 right-3 bg-zinc-950/80 backdrop-blur-md border border-zinc-800/80 rounded-xl py-2.5 px-3.5 text-center">
+            <p className="text-xs text-zinc-500">{eventTitle}</p>
+            <p className="text-sm font-medium text-zinc-50">{customerName}&rsquo;s portrait</p>
           </div>
         </div>
+      </div>
 
-        {/* Right: Purchase Options */}
-        <div className="flex flex-col justify-between space-y-6">
-          <div>
-            <div className="flex items-center gap-2 text-xs text-sky-400 font-semibold uppercase tracking-wider mb-1">
-              <Sparkles className="w-4 h-4" /> Live Artwork Delivery
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-              Get Your Personal Portrait
-            </h1>
-            <p className="text-xs text-slate-400 mt-1">
-              Download your high-resolution digital artwork immediately or get an archival print delivered to your home.
-            </p>
+      {/* Right: purchase panel */}
+      <div className="flex flex-col justify-center p-6 sm:p-16 space-y-6">
+        <div>
+          <div className="flex items-center gap-2 text-xs text-ember-400 font-medium uppercase tracking-wider mb-2">
+            <Sparkle size={16} weight="fill" /> Your portrait is ready
           </div>
+          <h1 className="text-3xl sm:text-4xl tracking-tighter font-semibold text-zinc-50">
+            Get your portrait
+          </h1>
+          <p className="text-sm text-zinc-500 mt-2 leading-relaxed max-w-[46ch]">
+            Download a copy straight away, or order a print delivered to your door.
+          </p>
+        </div>
 
-          {/* Option Selector Tabs */}
-          <div className="grid grid-cols-2 gap-2 bg-slate-950 p-1.5 rounded-2xl border border-slate-800">
-            <button
-              onClick={() => setSelectedTab('digital')}
-              className={`py-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                selectedTab === 'digital'
-                  ? 'bg-sky-500 text-white shadow-lg shadow-sky-500/20'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Download className="w-4 h-4" /> Digital Copy ({currSymbol}{(digitalPrice / 100).toFixed(2)})
-            </button>
-            <button
-              onClick={() => setSelectedTab('print')}
-              className={`py-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                selectedTab === 'print'
-                  ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <ShoppingBag className="w-4 h-4" /> Order Print
-            </button>
+        {error && (
+          <div className="p-4 bg-rose-950/40 border border-rose-900/60 rounded-2xl text-rose-300 text-sm flex items-center gap-2">
+            <WarningCircle size={16} weight="bold" className="shrink-0" /> {error}
           </div>
+        )}
 
-          {/* Tab Content */}
-          {selectedTab === 'digital' ? (
-            <div className="bg-slate-950/60 border border-slate-800/80 rounded-2xl p-5 space-y-4">
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-xs text-slate-300">
-                  <Check className="w-4 h-4 text-emerald-400" /> High-resolution digital PNG file
-                </div>
-                <div className="flex items-center gap-2 text-xs text-slate-300">
-                  <Check className="w-4 h-4 text-emerald-400" /> Immediate download link after payment
-                </div>
-                <div className="flex items-center gap-2 text-xs text-slate-300">
-                  <Check className="w-4 h-4 text-emerald-400" /> Apple Pay & Google Pay supported
-                </div>
-              </div>
+        <div className="grid grid-cols-2 gap-2 bg-zinc-900 p-1.5 rounded-2xl border border-zinc-800">
+          <button
+            onClick={() => setSelectedTab('digital')}
+            className={`py-3 rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 ${
+              selectedTab === 'digital' ? 'bg-ember-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <DownloadSimple size={16} weight="bold" /> Digital ({currSymbol}{(digitalPrice / 100).toFixed(2)})
+          </button>
+          <button
+            onClick={() => setSelectedTab('print')}
+            className={`py-3 rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 ${
+              selectedTab === 'print' ? 'bg-zinc-50 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <ShoppingBag size={16} weight="bold" /> Order print
+          </button>
+        </div>
 
-              <button
-                onClick={() => handleCheckout('digital')}
-                disabled={submittingCheckout}
-                className="w-full bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-bold py-4 px-6 rounded-2xl shadow-xl shadow-sky-500/20 text-base transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {submittingCheckout ? 'Redirecting...' : `Pay ${currSymbol}${(digitalPrice / 100).toFixed(2)} & Download`}
-              </button>
+        {selectedTab === 'digital' ? (
+          <div className="border border-zinc-800 rounded-2xl p-5 space-y-4">
+            <div className="space-y-2">
+              {['A high-quality copy of your picture', 'Download it the moment you pay', 'Pay with Apple Pay, Google Pay, or card'].map(
+                (line) => (
+                  <div key={line} className="flex items-center gap-2 text-xs text-zinc-400">
+                    <Check size={14} weight="bold" className="text-emerald-400 shrink-0" /> {line}
+                  </div>
+                )
+              )}
             </div>
-          ) : (
-            <div className="bg-slate-950/60 border border-slate-800/80 rounded-2xl p-5 space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                  Select Print Size
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {(['A5', 'A4', 'A3'] as ProductSize[]).map((size) => (
-                    <button
-                      key={size}
-                      type="button"
-                      onClick={() => setSelectedSize(size)}
-                      className={`p-3 rounded-xl border text-center transition-all ${
-                        selectedSize === size
-                          ? 'border-indigo-500 bg-indigo-500/10 text-white font-bold'
-                          : 'border-slate-800 bg-slate-900/50 text-slate-400 hover:border-slate-700'
-                      }`}
-                    >
-                      <p className="text-xs uppercase font-bold">{size}</p>
-                      <p className="text-sm text-indigo-400 font-extrabold mt-0.5">
-                        {currSymbol}{((printPrices?.[size] || 2200) / 100).toFixed(2)}
-                      </p>
-                    </button>
-                  ))}
-                </div>
-              </div>
 
-              <div className="space-y-3 pt-2">
-                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                  Shipping Address
-                </label>
+            <Button onClick={() => handleCheckout('digital')} disabled={submittingCheckout} className="w-full !py-4 text-base">
+              {submittingCheckout ? 'Redirecting…' : `Pay ${currSymbol}${(digitalPrice / 100).toFixed(2)} & download`}
+            </Button>
+          </div>
+        ) : (
+          <div className="border border-zinc-800 rounded-2xl p-5 space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2">
+                Select print size
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {(['A5', 'A4', 'A3'] as ProductSize[]).map((size) => (
+                  <button
+                    key={size}
+                    type="button"
+                    onClick={() => setSelectedSize(size)}
+                    className={`p-3 rounded-xl border text-center transition-colors ${
+                      selectedSize === size
+                        ? 'border-ember-600 bg-ember-500/10 text-zinc-50 font-semibold'
+                        : 'border-zinc-800 bg-zinc-900/50 text-zinc-400 hover:border-zinc-700'
+                    }`}
+                  >
+                    <p className="text-xs uppercase font-semibold">{size}</p>
+                    <p className="text-sm font-mono text-ember-400 mt-0.5">
+                      {currSymbol}{((printPrices?.[size] || 2200) / 100).toFixed(2)}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-3 pt-2">
+              <label className="block text-xs font-medium text-zinc-400 uppercase tracking-wider">Shipping address</label>
+              <input
+                type="text"
+                placeholder="Address line 1"
+                required
+                value={shipping.line1}
+                onChange={(e) => setShipping({ ...shipping, line1: e.target.value })}
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl py-2.5 px-3 text-xs text-zinc-50 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-ember-600/50"
+              />
+              <div className="grid grid-cols-2 gap-2">
                 <input
                   type="text"
-                  placeholder="Address Line 1"
+                  placeholder="City"
                   required
-                  value={shipping.line1}
-                  onChange={(e) => setShipping({ ...shipping, line1: e.target.value })}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-xl py-2.5 px-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  value={shipping.city}
+                  onChange={(e) => setShipping({ ...shipping, city: e.target.value })}
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl py-2.5 px-3 text-xs text-zinc-50 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-ember-600/50"
                 />
-                <div className="grid grid-cols-2 gap-2">
-                  <input
-                    type="text"
-                    placeholder="City"
-                    required
-                    value={shipping.city}
-                    onChange={(e) => setShipping({ ...shipping, city: e.target.value })}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-xl py-2.5 px-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Postcode / Zip"
-                    required
-                    value={shipping.postcode}
-                    onChange={(e) => setShipping({ ...shipping, postcode: e.target.value })}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-xl py-2.5 px-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                  />
-                </div>
+                <input
+                  type="text"
+                  placeholder="Postcode / ZIP"
+                  required
+                  value={shipping.postcode}
+                  onChange={(e) => setShipping({ ...shipping, postcode: e.target.value })}
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl py-2.5 px-3 text-xs text-zinc-50 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-ember-600/50"
+                />
               </div>
-
-              <button
-                onClick={() => handleCheckout('print')}
-                disabled={submittingCheckout || !shipping.line1 || !shipping.city || !shipping.postcode}
-                className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold py-4 px-6 rounded-2xl shadow-xl shadow-indigo-600/20 text-base transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {submittingCheckout
-                  ? 'Redirecting...'
-                  : `Buy ${selectedSize} Print (${currSymbol}${((printPrices?.[selectedSize] || 2200) / 100).toFixed(2)})`}
-              </button>
             </div>
-          )}
 
-          <div className="flex items-center justify-center gap-2 text-xs text-slate-500 pt-2 border-t border-slate-800/80">
-            <ShieldCheck className="w-4 h-4 text-emerald-400" /> Direct artist payment via Stripe Connect
+            <Button
+              onClick={() => handleCheckout('print')}
+              disabled={submittingCheckout || !shipping.line1 || !shipping.city || !shipping.postcode}
+              className="w-full !py-4 text-base"
+            >
+              {submittingCheckout
+                ? 'Redirecting…'
+                : `Buy ${selectedSize} print (${currSymbol}${((printPrices?.[selectedSize] || 2200) / 100).toFixed(2)})`}
+            </Button>
           </div>
-        </div>
+        )}
 
+        <div className="flex items-center justify-center gap-2 text-xs text-zinc-600 pt-2 border-t border-zinc-800/80">
+          <ShieldCheck size={16} weight="bold" className="text-emerald-500" /> Paid securely, straight to the artist
+        </div>
       </div>
     </div>
   );
