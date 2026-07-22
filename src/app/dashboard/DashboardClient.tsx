@@ -12,7 +12,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 
 export default function DashboardClient() {
   const router = useRouter();
-  const { user, isSignedIn } = useUser();
+  const { user, isSignedIn, isLoaded } = useUser();
   const { signOut } = useClerk();
 
   const storeUser = useMutation(api.artists.storeUser);
@@ -22,7 +22,11 @@ export default function DashboardClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSignedIn]);
 
-  const events = useQuery(api.events.getArtistEvents);
+  useEffect(() => {
+    if (isLoaded && !isSignedIn) router.push('/login');
+  }, [isLoaded, isSignedIn, router]);
+
+  const events = useQuery(api.events.getArtistEvents, isSignedIn ? undefined : 'skip');
   const loading = events === undefined;
 
   const [stripeConnected, setStripeConnected] = useState(false);
