@@ -1,0 +1,44 @@
+{
+  "name": "imprint-pod",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@clerk/nextjs": "^7.5.22",
+    "@next/swc-darwin-arm64": "15.1.7",
+    "@next/swc-wasm-nodejs": "^15.1.7",
+    "@next/swc-wasm-web": "^15.1.7",
+    "clsx": "^2.1.1",
+    "convex": "^1.42.3",
+    "lucide-react": "^0.475.0",
+    "next": "15.1.7",
+    "qrcode": "^1.5.4",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "regenerator-runtime": "^0.14.1",
+    "stripe": "^17.7.0",
+    "tailwind-merge": "^3.0.1",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@babel/core": "^8.0.1",
+    "@babel/plugin-transform-runtime": "^8.0.1",
+    "@babel/preset-react": "^8.0.1",
+    "@babel/runtime": "^8.0.0",
+    "@types/node": "^22.13.4",
+    "@types/qrcode": "^1.5.5",
+    "@types/react": "^19.0.10",
+    "@types/react-dom": "^19.0.4",
+    "@vitejs/plugin-react": "4.3.4",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.5.2",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.3",
+    "vite": "5.4.14"
+  }
+}
