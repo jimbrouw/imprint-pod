@@ -15,6 +15,10 @@ export default function SignUpPage() {
             colorInputForeground: '#fafafa',
             borderRadius: '0.75rem',
           },
+          elements: {
+            socialButtonsBlockButton: 'bg-white hover:bg-zinc-100 border border-zinc-300',
+            socialButtonsBlockButtonText: 'text-zinc-900 font-medium',
+          },
         }}
       />
     </div>
