@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Plus, Calendar, CreditCard, SignOut, ArrowRight } from '@phosphor-icons/react';
 import { useUser, useClerk } from '@clerk/nextjs';
-import { useMutation, useQuery } from 'convex/react';
+import { useConvexAuth, useMutation, useQuery } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -14,19 +14,23 @@ export default function DashboardClient() {
   const router = useRouter();
   const { user, isSignedIn, isLoaded } = useUser();
   const { signOut } = useClerk();
+  // Clerk reporting isSignedIn doesn't mean Convex has finished verifying the
+  // token yet — gate Convex calls on Convex's own auth state, not Clerk's, or
+  // queries fire during that gap and throw "Unauthenticated".
+  const { isAuthenticated: convexReady } = useConvexAuth();
 
   const storeUser = useMutation(api.artists.storeUser);
   useEffect(() => {
-    if (!isSignedIn) return;
+    if (!convexReady) return;
     storeUser().catch((err) => console.error('Failed to sync artist record:', err));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSignedIn]);
+  }, [convexReady]);
 
   useEffect(() => {
     if (isLoaded && !isSignedIn) router.push('/login');
   }, [isLoaded, isSignedIn, router]);
 
-  const events = useQuery(api.events.getArtistEvents, isSignedIn ? undefined : 'skip');
+  const events = useQuery(api.events.getArtistEvents, convexReady ? undefined : 'skip');
   const loading = events === undefined;
 
   const [stripeConnected, setStripeConnected] = useState(false);
