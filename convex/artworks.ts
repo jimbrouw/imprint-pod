@@ -127,3 +127,45 @@ export const getArtworkByToken = query({
     };
   },
 });
+
+// Server-to-server lookup for the checkout-session route (not called from
+// the browser) — everything Stripe Checkout Session creation needs in one
+// query: the connected account to charge on behalf of, prices, and ids to
+// stamp onto the order.
+export const getCheckoutContext = query({
+  args: { claimToken: v.string() },
+  handler: async (ctx, args) => {
+    const customer = await ctx.db
+      .query('customers')
+      .withIndex('by_claim_token', (q) => q.eq('claimToken', args.claimToken))
+      .first();
+    if (!customer) return null;
+
+    const event = await ctx.db.get(customer.eventId);
+    if (!event) return null;
+
+    const artwork = await ctx.db
+      .query('artworks')
+      .withIndex('by_customer', (q) => q.eq('customerId', customer._id))
+      .first();
+    if (!artwork) return null;
+
+    const artist = await ctx.db
+      .query('artists')
+      .withIndex('by_user_id', (q) => q.eq('userId', event.artistId))
+      .first();
+
+    return {
+      artworkId: artwork._id,
+      customerId: customer._id,
+      customerName: customer.name,
+      customerEmail: customer.email,
+      artistId: event.artistId,
+      stripeAccountId: artist?.stripeAccountId ?? null,
+      digitalPrice: event.digitalPrice,
+      printPrices: event.printPrices,
+      currency: event.currency,
+      eventTitle: event.title,
+    };
+  },
+});

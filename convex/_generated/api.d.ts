@@ -12,6 +12,7 @@ import type * as artists from "../artists.js";
 import type * as artworks from "../artworks.js";
 import type * as customers from "../customers.js";
 import type * as events from "../events.js";
+import type * as orders from "../orders.js";
 
 import type {
   ApiFromModules,
@@ -24,6 +25,7 @@ declare const fullApi: ApiFromModules<{
   artworks: typeof artworks;
   customers: typeof customers;
   events: typeof events;
+  orders: typeof orders;
 }>;
 
 /**

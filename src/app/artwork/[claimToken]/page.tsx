@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import { useQuery } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
 import { DownloadSimple, ShoppingBag, Check, ShieldCheck, Sparkle, WarningCircle } from '@phosphor-icons/react';
-import { ProductSize, ShippingAddress } from '@/lib/types';
+import { ProductSize } from '@/lib/types';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
 
@@ -20,23 +20,29 @@ export default function ArtworkPurchasePage() {
 
   const [selectedTab, setSelectedTab] = useState<'digital' | 'print'>('digital');
   const [selectedSize, setSelectedSize] = useState<ProductSize>('A4');
-  const [shipping, setShipping] = useState<ShippingAddress>({
-    line1: '',
-    line2: '',
-    city: '',
-    postcode: '',
-    country: 'GB',
-  });
   const [submittingCheckout, setSubmittingCheckout] = useState(false);
 
-  const handleCheckout = async (_type: 'digital' | 'print') => {
+  const handleCheckout = async (type: 'digital' | 'print') => {
     setSubmittingCheckout(true);
     setError(null);
 
-    setTimeout(() => {
-      const baseUrl = window.location.origin;
-      window.location.href = `${baseUrl}/checkout/success?session_id=mock_session_from_convex`;
-    }, 800);
+    try {
+      const res = await fetch('/api/checkout/create-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          claimToken,
+          type,
+          productSize: type === 'print' ? selectedSize : undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Checkout failed');
+      window.location.href = data.url;
+    } catch (err: any) {
+      setError(err.message || 'Checkout failed');
+      setSubmittingCheckout(false);
+    }
   };
 
   if (loading) {
@@ -171,39 +177,13 @@ export default function ArtworkPurchasePage() {
               </div>
             </div>
 
-            <div className="space-y-3 pt-2">
-              <label className="block text-xs font-medium text-zinc-400 uppercase tracking-wider">Shipping address</label>
-              <input
-                type="text"
-                placeholder="Address line 1"
-                required
-                value={shipping.line1}
-                onChange={(e) => setShipping({ ...shipping, line1: e.target.value })}
-                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl py-2.5 px-3 text-xs text-zinc-50 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-ember-600/50"
-              />
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  type="text"
-                  placeholder="City"
-                  required
-                  value={shipping.city}
-                  onChange={(e) => setShipping({ ...shipping, city: e.target.value })}
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl py-2.5 px-3 text-xs text-zinc-50 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-ember-600/50"
-                />
-                <input
-                  type="text"
-                  placeholder="Postcode / ZIP"
-                  required
-                  value={shipping.postcode}
-                  onChange={(e) => setShipping({ ...shipping, postcode: e.target.value })}
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl py-2.5 px-3 text-xs text-zinc-50 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-ember-600/50"
-                />
-              </div>
-            </div>
+            <p className="text-xs text-zinc-500">
+              You'll enter your shipping address on the payment page.
+            </p>
 
             <Button
               onClick={() => handleCheckout('print')}
-              disabled={submittingCheckout || !shipping.line1 || !shipping.city || !shipping.postcode}
+              disabled={submittingCheckout}
               className="w-full !py-4 text-base"
             >
               {submittingCheckout

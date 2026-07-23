@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Plus, Calendar, CreditCard, SignOut, ArrowRight } from '@phosphor-icons/react';
@@ -33,7 +33,11 @@ export default function DashboardClient() {
   const events = useQuery(api.events.getArtistEvents, convexReady ? undefined : 'skip');
   const loading = events === undefined;
 
-  const [stripeConnected, setStripeConnected] = useState(false);
+  const artist = useQuery(api.artists.getMyArtist, convexReady ? undefined : 'skip');
+  // Only reflects onboarding status as of account creation — flips to true
+  // once there's a listener for Stripe's `account.updated` webhook, which
+  // isn't built yet.
+  const stripeConnected = artist?.stripeOnboardingComplete ?? false;
   const artistName = user?.fullName || 'your studio';
   const initial = (user?.fullName || 'I').charAt(0);
 
