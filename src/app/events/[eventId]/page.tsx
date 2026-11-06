@@ -15,7 +15,7 @@ export default function EventControlRoomPage() {
   const router = useRouter();
   const eventId = params.eventId as string;
 
-  const event = useQuery(api.events.getEventBySlug, { slug: eventId });
+  const event = useQuery(api.events.getEventForArtist, { slug: eventId });
   const customers = useQuery(api.events.getCustomerQueue, event ? { eventId: event._id } : 'skip') || [];
   const createCustomer = useMutation(api.customers.createCustomer);
 

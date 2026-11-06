@@ -17,20 +17,46 @@ function CheckoutSuccessContent() {
 
   useEffect(() => {
     if (!sessionId) {
+      setError('Missing checkout session.');
       setLoading(false);
       return;
     }
-    
-    // Simulate a successful network verification delay
-    setTimeout(() => {
-      setOrderDetails({
-        downloadUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop',
-        orderType: 'digital',
-        productSize: null,
-        fulfilmentStatus: 'Submitted',
-      });
-      setLoading(false);
-    }, 1500);
+
+    let cancelled = false;
+    let attempts = 0;
+
+    // The server verifies with Stripe; poll briefly in case the payment is still settling.
+    const check = async () => {
+      try {
+        const res = await fetch(`/api/checkout/session?session_id=${encodeURIComponent(sessionId)}`);
+        const data = await res.json();
+        if (cancelled) return;
+        if (!res.ok) throw new Error(data.error?.message || 'Could not verify payment');
+        if (data.paid) {
+          setOrderDetails({
+            downloadUrl: data.type === 'digital' ? `/api/artworks/${data.claimToken}/download` : null,
+            artworkPage: `/artwork/${data.claimToken}`,
+            orderType: data.type,
+            productSize: data.productSize,
+            fulfilmentStatus: String(data.fulfilmentStatus || '').replace(/_/g, ' '),
+          });
+          setLoading(false);
+        } else if (++attempts < 8) {
+          setTimeout(check, 1500);
+        } else {
+          setError('Your payment has not been confirmed yet. If you were charged, you will get an email shortly.');
+          setLoading(false);
+        }
+      } catch (err: any) {
+        if (cancelled) return;
+        setError(err.message || 'Could not verify payment');
+        setLoading(false);
+      }
+    };
+    check();
+    return () => {
+      cancelled = true;
+    };
   }, [sessionId]);
 
   if (loading) {
@@ -38,6 +64,18 @@ function CheckoutSuccessContent() {
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-400 gap-3">
         <RefreshCw className="w-8 h-8 animate-spin text-sky-400" />
         <p>Verifying payment with Stripe...</p>
+      </div>
+    );
+  }
+
+  if (error || !orderDetails) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 max-w-md text-center space-y-3">
+          <AlertCircle className="w-12 h-12 text-amber-400 mx-auto" />
+          <h2 className="text-xl font-bold text-white">Payment not confirmed</h2>
+          <p className="text-sm text-slate-400">{error || 'We could not find your order.'}</p>
+        </div>
       </div>
     );
   }
@@ -71,7 +109,7 @@ function CheckoutSuccessContent() {
           </div>
         ) : (
           <div className="bg-slate-950 p-6 rounded-2xl border border-slate-800 text-slate-400 text-sm">
-            Processing digital download link...
+            <a href={orderDetails?.artworkPage} className="text-sky-400 underline">View your artwork page</a>
           </div>
         )}
 

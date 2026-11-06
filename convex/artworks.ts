@@ -1,103 +1,150 @@
-// @ts-nocheck
 import { query, mutation } from './_generated/server';
 import { v } from 'convex/values';
+import {
+  requireUserId,
+  requireServerSecret,
+  ALLOWED_MIME,
+  MAX_ORIGINAL_BYTES,
+  MAX_PREVIEW_BYTES,
+} from './helpers';
+import { insertCustomer } from './customers';
 
-export const generateUploadUrl = mutation({
-  handler: async (ctx) => {
-    return await ctx.storage.generateUploadUrl();
-  },
-});
-
+/**
+ * Artist starts an upload. Creates (or reuses) the customer + artwork records and
+ * returns two upload URLs: a small watermarked preview (fast) and the full original.
+ */
 export const presignArtworkUpload = mutation({
   args: {
     eventId: v.id('events'),
-    artistId: v.string(),
-    customerName: v.string(),
-    mimeType: v.string(),
-    byteSize: v.number(),
+    customerId: v.optional(v.id('customers')),
+    customerName: v.optional(v.string()),
+    mimeType: v.string(), // mime type of the ORIGINAL
+    originalByteSize: v.number(),
+    previewByteSize: v.number(),
   },
   handler: async (ctx, args) => {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    let claimCode = '';
-    for (let i = 0; i < 6; i++) {
-      claimCode += chars[Math.floor(Math.random() * chars.length)];
+    const userId = await requireUserId(ctx);
+    const event = await ctx.db.get(args.eventId);
+    if (!event || event.artistId !== userId) throw new Error('Event not found');
+
+    if (!ALLOWED_MIME.includes(args.mimeType)) throw new Error('Only PNG or JPEG images are supported');
+    if (args.originalByteSize < 1 || args.originalByteSize > MAX_ORIGINAL_BYTES) {
+      throw new Error('File size must be under 25 MB');
     }
-    const claimToken = Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
+    if (args.previewByteSize < 1 || args.previewByteSize > MAX_PREVIEW_BYTES) {
+      throw new Error('Preview too large');
+    }
 
-    const customerId = await ctx.db.insert('customers', {
-      eventId: args.eventId,
-      name: args.customerName,
-      claimCode,
-      claimToken,
-      consentMarketing: false,
-      createdAt: Date.now(),
-    });
+    let customerId = args.customerId;
+    let claimCode: string;
+    let claimToken: string;
 
-    const artworkId = await ctx.db.insert('artworks', {
-      customerId,
-      artistId: args.artistId,
-      mimeType: args.mimeType,
-      byteSize: args.byteSize,
-      originalReady: false,
-      status: 'pending',
-      createdAt: Date.now(),
-    });
+    if (customerId) {
+      const customer = await ctx.db.get(customerId);
+      if (!customer || customer.eventId !== args.eventId) throw new Error('Customer not found');
+      claimCode = customer.claimCode;
+      claimToken = customer.claimToken;
+    } else {
+      const name = args.customerName?.trim();
+      if (!name || name.length > 120) throw new Error('Customer name required');
+      const created = await insertCustomer(ctx, args.eventId, name);
+      customerId = created.customerId;
+      claimCode = created.claimCode;
+      claimToken = created.claimToken;
+    }
 
-    const uploadUrl = await ctx.storage.generateUploadUrl();
+    const existing = await ctx.db
+      .query('artworks')
+      .withIndex('by_customer', (q) => q.eq('customerId', customerId!))
+      .first();
+
+    let artworkId;
+    if (existing) {
+      if (existing.status === 'paid') throw new Error('This portrait has already been purchased');
+      // Re-upload: drop the old files and reset.
+      if (existing.previewStorageId) await ctx.storage.delete(existing.previewStorageId);
+      if (existing.originalStorageId) await ctx.storage.delete(existing.originalStorageId);
+      await ctx.db.patch(existing._id, {
+        previewStorageId: undefined,
+        originalStorageId: undefined,
+        originalReady: false,
+        status: 'pending',
+        mimeType: args.mimeType,
+        byteSize: args.originalByteSize,
+        uploadedAt: undefined,
+      });
+      artworkId = existing._id;
+    } else {
+      artworkId = await ctx.db.insert('artworks', {
+        customerId,
+        artistId: userId,
+        mimeType: args.mimeType,
+        byteSize: args.originalByteSize,
+        originalReady: false,
+        status: 'pending',
+        createdAt: Date.now(),
+      });
+    }
 
     return {
       artworkId,
       customerId,
       claimCode,
       claimToken,
-      uploadUrl,
+      previewUploadUrl: await ctx.storage.generateUploadUrl(),
+      originalUploadUrl: await ctx.storage.generateUploadUrl(),
     };
   },
 });
 
 export const completePreview = mutation({
-  args: {
-    artworkId: v.id('artworks'),
-    storageId: v.id('_storage'),
-  },
+  args: { artworkId: v.id('artworks'), storageId: v.id('_storage') },
   handler: async (ctx, args) => {
+    const userId = await requireUserId(ctx);
+    const artwork = await ctx.db.get(args.artworkId);
+    if (!artwork || artwork.artistId !== userId) throw new Error('Artwork not found');
+    const meta = await ctx.db.system.get(args.storageId);
+    if (!meta || !ALLOWED_MIME.includes(meta.contentType ?? '') || meta.size > MAX_PREVIEW_BYTES) {
+      await ctx.storage.delete(args.storageId);
+      throw new Error('Invalid preview upload');
+    }
     await ctx.db.patch(args.artworkId, {
       previewStorageId: args.storageId,
-      status: 'uploaded',
+      status: artwork.status === 'paid' ? 'paid' : 'uploaded',
       uploadedAt: Date.now(),
     });
-
-    const artwork = await ctx.db.get(args.artworkId);
-    const customer = artwork ? await ctx.db.get(artwork.customerId) : null;
-
-    return {
-      artworkId: args.artworkId,
-      claimToken: customer?.claimToken,
-    };
   },
 });
 
 export const completeOriginal = mutation({
-  args: {
-    artworkId: v.string(),
-    storageId: v.string(),
-  },
+  args: { artworkId: v.id('artworks'), storageId: v.id('_storage') },
   handler: async (ctx, args) => {
+    const userId = await requireUserId(ctx);
+    const artwork = await ctx.db.get(args.artworkId);
+    if (!artwork || artwork.artistId !== userId) throw new Error('Artwork not found');
+    const meta = await ctx.db.system.get(args.storageId);
+    if (!meta || !ALLOWED_MIME.includes(meta.contentType ?? '') || meta.size > MAX_ORIGINAL_BYTES) {
+      await ctx.storage.delete(args.storageId);
+      throw new Error('Invalid original upload');
+    }
     await ctx.db.patch(args.artworkId, {
       originalStorageId: args.storageId,
       originalReady: true,
+      mimeType: meta.contentType ?? artwork.mimeType,
+      byteSize: meta.size,
     });
   },
 });
 
+/** Public (token-gated): everything the customer purchase page needs. */
 export const getArtworkByToken = query({
   args: { claimToken: v.string() },
   handler: async (ctx, args) => {
+    if (args.claimToken.length < 32) return null;
     const customer = await ctx.db
       .query('customers')
       .withIndex('by_claim_token', (q) => q.eq('claimToken', args.claimToken))
       .first();
-
     if (!customer) return null;
 
     const event = await ctx.db.get(customer.eventId);
@@ -105,21 +152,50 @@ export const getArtworkByToken = query({
       .query('artworks')
       .withIndex('by_customer', (q) => q.eq('customerId', customer._id))
       .first();
+    if (!event || !artwork) return null;
 
-    let previewUrl = null;
-    if (artwork?.previewStorageId) {
-      previewUrl = await ctx.storage.getUrl(artwork.previewStorageId);
-    }
+    const artist = await ctx.db
+      .query('artists')
+      .withIndex('by_user_id', (q) => q.eq('userId', event.artistId))
+      .first();
+
+    const previewUrl = artwork.previewStorageId ? await ctx.storage.getUrl(artwork.previewStorageId) : null;
+    const logoUrl = event.logoStorageId ? await ctx.storage.getUrl(event.logoStorageId) : null;
 
     return {
       customerName: customer.name,
-      eventTitle: event?.title,
-      digitalPrice: event?.digitalPrice,
-      printPrices: event?.printPrices,
-      currency: event?.currency,
+      eventTitle: event.title,
+      logoUrl,
+      digitalPrice: event.digitalPrice,
+      printPrices: event.printPrices,
+      currency: event.currency,
       previewUrl,
-      artworkId: artwork?._id,
-      isPaid: artwork?.status === 'paid',
+      originalReady: artwork.originalReady,
+      isPaid: artwork.status === 'paid',
+      sellerReady: !!artist?.stripeOnboardingComplete && event.isActive,
     };
+  },
+});
+
+// ---- Server-only ----
+
+/** Returns the original file URL only if the digital copy has been paid for. */
+export const serverGetDownload = query({
+  args: { secret: v.string(), claimToken: v.string() },
+  handler: async (ctx, args) => {
+    requireServerSecret(args.secret);
+    const customer = await ctx.db
+      .query('customers')
+      .withIndex('by_claim_token', (q) => q.eq('claimToken', args.claimToken))
+      .first();
+    if (!customer) return null;
+    const artwork = await ctx.db
+      .query('artworks')
+      .withIndex('by_customer', (q) => q.eq('customerId', customer._id))
+      .first();
+    if (!artwork || artwork.status !== 'paid' || !artwork.originalStorageId) return null;
+    const url = await ctx.storage.getUrl(artwork.originalStorageId);
+    if (!url) return null;
+    return { url, mimeType: artwork.mimeType, customerName: customer.name };
   },
 });

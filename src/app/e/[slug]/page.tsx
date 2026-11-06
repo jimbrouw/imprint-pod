@@ -9,7 +9,7 @@ export default function PublicEventClaimPage() {
   const router = useRouter();
   const slug = params.slug as string;
 
-  const [eventData, setEventData] = useState<{ title: string; logoUrl?: string } | null>(null);
+  const [eventData, setEventData] = useState<{ title: string; logoUrl?: string | null } | null>(null);
   const [claimCode, setClaimCode] = useState('');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -77,9 +77,13 @@ export default function PublicEventClaimPage() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-4 flex items-center justify-center">
       <div className="w-full max-w-md bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl backdrop-blur-md text-center">
-        <div className="w-16 h-16 bg-gradient-to-tr from-sky-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-sky-500/20 mx-auto mb-4">
-          <Palette className="w-8 h-8 text-white" />
-        </div>
+        {eventData?.logoUrl ? (
+          <img src={eventData.logoUrl} alt="" className="h-16 mx-auto mb-4 object-contain" />
+        ) : (
+          <div className="w-16 h-16 bg-gradient-to-tr from-sky-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-sky-500/20 mx-auto mb-4">
+            <Palette className="w-8 h-8 text-white" />
+          </div>
+        )}
 
         <h1 className="text-2xl font-extrabold text-white tracking-tight mb-1">
           {eventData?.title || 'Live Artist Portrait'}

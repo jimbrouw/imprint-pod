@@ -1,24 +1,85 @@
-// @ts-nocheck
 import { query, mutation } from './_generated/server';
+import type { QueryCtx, MutationCtx } from './_generated/server';
 import { v } from 'convex/values';
+import { requireUserId, randomHex } from './helpers';
+
+async function getOwnedEventBySlug(ctx: QueryCtx | MutationCtx, slug: string, userId: string) {
+  const event = await ctx.db
+    .query('events')
+    .withIndex('by_slug', (q) => q.eq('slug', slug))
+    .first();
+  if (!event || event.artistId !== userId) return null;
+  return event;
+}
+
+export const generateLogoUploadUrl = mutation({
+  args: {},
+  handler: async (ctx) => {
+    await requireUserId(ctx);
+    return await ctx.storage.generateUploadUrl();
+  },
+});
 
 export const createEvent = mutation({
   args: {
-    artistId: v.string(),
     title: v.string(),
     eventDate: v.optional(v.string()),
     digitalPrice: v.number(),
     printPrices: v.object({ A5: v.number(), A4: v.number(), A3: v.number() }),
     currency: v.union(v.literal('gbp'), v.literal('usd'), v.literal('eur')),
+    logoStorageId: v.optional(v.id('_storage')),
   },
   handler: async (ctx, args) => {
-    const slug = `${args.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Math.random().toString(36).substring(2, 6)}`;
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error('Not authenticated');
+    const userId = identity.subject;
+
+    const title = args.title.trim();
+    if (title.length < 1 || title.length > 160) throw new Error('Event name must be 1-160 characters');
+    const prices = [args.digitalPrice, args.printPrices.A5, args.printPrices.A4, args.printPrices.A3];
+    if (prices.some((p) => !Number.isInteger(p) || p < 100 || p > 100000)) {
+      throw new Error('Prices must be between 1.00 and 1000.00');
+    }
+
+    // Make sure there is an artist profile for this user.
+    const artist = await ctx.db
+      .query('artists')
+      .withIndex('by_user_id', (q) => q.eq('userId', userId))
+      .first();
+    if (!artist) {
+      await ctx.db.insert('artists', {
+        userId,
+        name: identity.name || identity.email || 'Artist',
+        email: identity.email || '',
+        stripeOnboardingComplete: false,
+        defaultCurrency: 'gbp',
+        createdAt: Date.now(),
+      });
+    }
+
+    const base =
+      title
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 40) || 'event';
+    let slug = `${base}-${randomHex(3)}`;
+    for (let i = 0; i < 5; i++) {
+      const clash = await ctx.db
+        .query('events')
+        .withIndex('by_slug', (q) => q.eq('slug', slug))
+        .first();
+      if (!clash) break;
+      slug = `${base}-${randomHex(4)}`;
+    }
+
     const eventId = await ctx.db.insert('events', {
-      artistId: args.artistId,
-      title: args.title,
+      artistId: userId,
+      title,
       eventDate: args.eventDate,
       slug,
       isActive: true,
+      logoStorageId: args.logoStorageId,
       digitalPrice: args.digitalPrice,
       printPrices: args.printPrices,
       currency: args.currency,
@@ -28,30 +89,100 @@ export const createEvent = mutation({
   },
 });
 
-export const getArtistEvents = query({
-  args: { artistId: v.string() },
+export const setEventActive = mutation({
+  args: { slug: v.string(), isActive: v.boolean() },
   handler: async (ctx, args) => {
-    return await ctx.db
-      .query('events')
-      .withIndex('by_artist', (q) => q.eq('artistId', args.artistId))
-      .order('desc')
-      .collect();
+    const userId = await requireUserId(ctx);
+    const event = await getOwnedEventBySlug(ctx, args.slug, userId);
+    if (!event) throw new Error('Event not found');
+    await ctx.db.patch(event._id, { isActive: args.isActive });
   },
 });
 
-export const getEventBySlug = query({
+// Dashboard: events + simple stats for the signed-in artist.
+export const getDashboard = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+    const userId = identity.subject;
+
+    const events = await ctx.db
+      .query('events')
+      .withIndex('by_artist', (q) => q.eq('artistId', userId))
+      .order('desc')
+      .collect();
+
+    const orders = await ctx.db
+      .query('orders')
+      .withIndex('by_artist', (q) => q.eq('artistId', userId))
+      .collect();
+    const paid = orders.filter((o) => o.paymentStatus === 'paid');
+
+    const artworks = await ctx.db
+      .query('artworks')
+      .withIndex('by_artist_status', (q) => q.eq('artistId', userId))
+      .collect();
+
+    const customerEvent = new Map<string, string>();
+    const perEvent = new Map<string, { portraits: number; revenue: number; prints: number }>();
+    for (const e of events) perEvent.set(e._id, { portraits: 0, revenue: 0, prints: 0 });
+
+    for (const a of artworks) {
+      if (a.status === 'pending') continue;
+      let eventId = customerEvent.get(a.customerId);
+      if (!eventId) {
+        const c = await ctx.db.get(a.customerId);
+        if (!c) continue;
+        eventId = c.eventId;
+        customerEvent.set(a.customerId, eventId);
+      }
+      const stat = perEvent.get(eventId);
+      if (stat) stat.portraits += 1;
+    }
+    for (const o of paid) {
+      const stat = o.eventId ? perEvent.get(o.eventId) : undefined;
+      if (stat) {
+        stat.revenue += o.amount - (o.platformFee ?? 0);
+        if (o.type === 'print') stat.prints += 1;
+      }
+    }
+
+    const artist = await ctx.db
+      .query('artists')
+      .withIndex('by_user_id', (q) => q.eq('userId', userId))
+      .first();
+
+    return {
+      stripeConnected: !!artist?.stripeAccountId,
+      stripeOnboardingComplete: !!artist?.stripeOnboardingComplete,
+      events: events.map((e) => ({ ...e, ...perEvent.get(e._id)! })),
+      totals: {
+        portraits: artworks.filter((a) => a.status !== 'pending').length,
+        revenue: paid.reduce((s, o) => s + o.amount - (o.platformFee ?? 0), 0),
+        printOrders: paid.filter((o) => o.type === 'print').length,
+      },
+    };
+  },
+});
+
+// Artist-only: full event for the control room / upload terminal.
+export const getEventForArtist = query({
   args: { slug: v.string() },
   handler: async (ctx, args) => {
-    return await ctx.db
-      .query('events')
-      .withIndex('by_slug', (q) => q.eq('slug', args.slug))
-      .first();
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return undefined; // still loading auth
+    return await getOwnedEventBySlug(ctx, args.slug, identity.subject);
   },
 });
 
 export const getCustomerQueue = query({
   args: { eventId: v.id('events') },
   handler: async (ctx, args) => {
+    const userId = await requireUserId(ctx);
+    const event = await ctx.db.get(args.eventId);
+    if (!event || event.artistId !== userId) return [];
+
     const customers = await ctx.db
       .query('customers')
       .withIndex('by_event', (q) => q.eq('eventId', args.eventId))
@@ -70,9 +201,16 @@ export const getCustomerQueue = query({
   },
 });
 
-export const getEvent = query({
-  args: { eventId: v.id('events') },
+// Public: only what the customer claim page needs.
+export const getPublicEvent = query({
+  args: { slug: v.string() },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.eventId);
+    const event = await ctx.db
+      .query('events')
+      .withIndex('by_slug', (q) => q.eq('slug', args.slug))
+      .first();
+    if (!event || !event.isActive) return null;
+    const logoUrl = event.logoStorageId ? await ctx.storage.getUrl(event.logoStorageId) : null;
+    return { title: event.title, eventDate: event.eventDate ?? null, logoUrl };
   },
 });

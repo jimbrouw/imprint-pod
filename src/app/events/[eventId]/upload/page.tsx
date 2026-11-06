@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../../../../convex/_generated/api';
+import type { Id } from '../../../../../convex/_generated/dataModel';
 
 import { generateQRCodeDataUrl } from '@/lib/qr';
 import { ArrowLeft, Upload, Check, Zap, QrCode, Copy, RefreshCw, AlertCircle } from 'lucide-react';
@@ -28,30 +29,26 @@ export default function iPadUploadTerminalPage() {
   const [completedClaimCode, setCompletedClaimCode] = useState<string | null>(null);
   const [completedQrUrl, setCompletedQrUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [originalSync, setOriginalSync] = useState<'idle' | 'uploading' | 'done' | 'failed'>('idle');
+  const pendingOriginal = useRef<(() => Promise<void>) | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const presignArtworkUpload = useMutation(api.artworks.presignArtworkUpload);
   const completePreview = useMutation(api.artworks.completePreview);
+  const completeOriginal = useMutation(api.artworks.completeOriginal);
   
-  const event = useQuery(api.events.getEventBySlug, { slug: eventId });
+  const event = useQuery(api.events.getEventForArtist, { slug: eventId });
+  const queue = useQuery(api.events.getCustomerQueue, event ? { eventId: event._id } : 'skip');
 
+  // Pre-fill the name when arriving from a pre-registered customer row.
   useEffect(() => {
-    if (initialCustomerId) {
-      // Pre-fill customer name from localStorage demo data
-      try {
-        const raw = localStorage.getItem(`demo_customers_${eventId}`);
-        if (raw) {
-          const customers = JSON.parse(raw) as { id: string; name: string }[];
-          const match = customers.find((c) => c.id === initialCustomerId);
-          if (match) setCustomerName(match.name);
-        }
-      } catch {
-        // ignore parse errors
-      }
+    if (initialCustomerId && queue) {
+      const match = queue.find((c) => c._id === initialCustomerId);
+      if (match) setCustomerName((prev) => prev || match.name);
     }
-  }, [initialCustomerId, eventId]);
+  }, [initialCustomerId, queue]);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -92,7 +89,21 @@ export default function iPadUploadTerminalPage() {
 
         const ctx = canvas.getContext('2d');
         if (!ctx) return reject(new Error('Canvas context unavailable'));
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, height);
         ctx.drawImage(img, 0, 0, width, height);
+        // Diagonal tiled watermark so the free preview isn't a substitute for the paid original.
+        ctx.save();
+        ctx.globalAlpha = 0.22;
+        ctx.fillStyle = '#0f172a';
+        ctx.font = `bold ${Math.round(width / 16)}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.rotate(-Math.PI / 6);
+        const step = Math.round(width / 3.2);
+        for (let y = -width; y < height + width; y += step) {
+          for (let x = -width; x < width * 2; x += step * 1.6) ctx.fillText('PREVIEW', x, y);
+        }
+        ctx.restore();
 
         canvas.toBlob(
           (blob) => {
@@ -122,46 +133,66 @@ export default function iPadUploadTerminalPage() {
     setUploadStep('Generating fast preview...');
 
     try {
-      // 1. Generate fast ~200KB preview blob
+      if (!event) throw new Error('Event not loaded');
+
+      // 1. Small watermarked preview (fast) ...
       const previewBlob = await createPreviewBlob(selectedFile);
       setUploadProgress(25);
-      setUploadStep('Requesting presigned upload tokens...');
+      setUploadStep('Preparing upload...');
 
-      if (!event) throw new Error("Event not loaded");
-      
-      const { uploadUrl, artworkId, claimCode, claimToken } = await presignArtworkUpload({
+      const preset = await presignArtworkUpload({
         eventId: event._id,
-        artistId: 'demo-artist',
+        customerId: initialCustomerId ? (initialCustomerId as Id<'customers'>) : undefined,
         customerName: customerName.trim(),
-        mimeType: previewBlob.type,
-        byteSize: previewBlob.size,
+        mimeType: selectedFile.type,
+        originalByteSize: selectedFile.size,
+        previewByteSize: previewBlob.size,
       });
 
-      setUploadProgress(50);
-      setUploadStep('Uploading image...');
+      setUploadProgress(45);
+      setUploadStep('Uploading preview...');
 
-      const result = await fetch(uploadUrl, {
+      const previewRes = await fetch(preset.previewUploadUrl, {
         method: 'POST',
-        headers: { 'Content-Type': previewBlob.type },
+        headers: { 'Content-Type': 'image/jpeg' },
         body: previewBlob,
       });
-      const { storageId } = await result.json();
+      if (!previewRes.ok) throw new Error('Preview upload failed. Check your connection and retry.');
+      const { storageId: previewStorageId } = await previewRes.json();
+      await completePreview({ artworkId: preset.artworkId, storageId: previewStorageId });
 
-      await completePreview({
-        artworkId,
-        storageId,
-      });
-
-      setUploadProgress(75);
+      setUploadProgress(80);
       setUploadStep('Finalizing claim QR code...');
 
-      const artworkClaimUrl = `${window.location.origin}/artwork/${claimToken}`;
+      const artworkClaimUrl = `${window.location.origin}/artwork/${preset.claimToken}`;
       const qrDataUrl = await generateQRCodeDataUrl(artworkClaimUrl);
 
-      setCompletedClaimCode(claimCode);
+      setCompletedClaimCode(preset.claimCode);
       setCompletedQrUrl(qrDataUrl);
       setUploadProgress(100);
       setUploadStep('Done! Artwork claimable now.');
+
+      // 2. ... then the full-resolution original in the background. Customers can't pay until it lands.
+      const file = selectedFile;
+      const syncOriginal = async () => {
+        setOriginalSync('uploading');
+        try {
+          const res = await fetch(preset.originalUploadUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': file.type },
+            body: file,
+          });
+          if (!res.ok) throw new Error('Original upload failed');
+          const { storageId } = await res.json();
+          await completeOriginal({ artworkId: preset.artworkId, storageId });
+          setOriginalSync('done');
+          pendingOriginal.current = null;
+        } catch {
+          setOriginalSync('failed');
+        }
+      };
+      pendingOriginal.current = syncOriginal;
+      void syncOriginal();
 
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Upload failed');
@@ -178,6 +209,9 @@ export default function iPadUploadTerminalPage() {
     setCompletedQrUrl(null);
     setUploadProgress(0);
     setUploadStep(null);
+    setOriginalSync('idle');
+    pendingOriginal.current = null;
+    if (initialCustomerId) router.replace(`/events/${eventId}/upload`);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -235,9 +269,25 @@ export default function iPadUploadTerminalPage() {
               </div>
             </div>
 
+            <div className="text-xs">
+              {originalSync === 'uploading' && (
+                <p className="text-amber-400">Syncing full-resolution original… keep this screen open before starting the next customer.</p>
+              )}
+              {originalSync === 'done' && <p className="text-emerald-400">Full-resolution original saved. Customer can pay now.</p>}
+              {originalSync === 'failed' && (
+                <p className="text-rose-400">
+                  Original upload failed.{' '}
+                  <button type="button" onClick={() => pendingOriginal.current?.()} className="underline font-semibold">
+                    Retry
+                  </button>
+                </p>
+              )}
+            </div>
+
             <button
+              disabled={originalSync === 'uploading'}
               onClick={handleResetForNext}
-              className="w-full bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-bold py-4 px-6 rounded-2xl shadow-xl shadow-sky-500/20 flex items-center justify-center gap-2 text-base transition-all"
+              className="w-full bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-bold py-4 px-6 rounded-2xl shadow-xl shadow-sky-500/20 flex items-center justify-center gap-2 text-base transition-all disabled:opacity-50"
             >
               <RefreshCw className="w-5 h-5" /> Draw & Upload Next Customer
             </button>
@@ -317,7 +367,7 @@ export default function iPadUploadTerminalPage() {
               disabled={uploading || !selectedFile || !customerName.trim()}
               className="w-full bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-bold py-4 px-6 rounded-2xl shadow-xl shadow-sky-500/20 text-base transition-all disabled:opacity-50 flex items-center justify-center gap-2"
             >
-              {uploading ? 'Uploading (<30s)...' : 'Upload Preview & Finish'}
+              {uploading ? 'Uploading (<30s)...' : 'Upload & Finish'}
               <Zap className="w-5 h-5" />
             </button>
           </form>
