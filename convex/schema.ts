@@ -10,14 +10,17 @@ export default defineSchema({
     stripeOnboardingComplete: v.boolean(),
     defaultCurrency: v.union(v.literal('gbp'), v.literal('usd'), v.literal('eur')),
     createdAt: v.number(),
-  }).index('by_user_id', ['userId']),
+  })
+    .index('by_user_id', ['userId'])
+    .index('by_stripe_account', ['stripeAccountId']),
 
   events: defineTable({
-    artistId: v.string(),
+    artistId: v.string(), // Clerk user id of the owning artist
     title: v.string(),
     eventDate: v.optional(v.string()),
     slug: v.string(),
     isActive: v.boolean(),
+    logoStorageId: v.optional(v.id('_storage')),
     digitalPrice: v.number(), // minor units e.g. 1500
     printPrices: v.object({
       A5: v.number(),
@@ -48,7 +51,7 @@ export default defineSchema({
     artistId: v.string(),
     previewStorageId: v.optional(v.id('_storage')),
     originalStorageId: v.optional(v.id('_storage')),
-    mimeType: v.string(),
+    mimeType: v.string(), // mime type of the ORIGINAL file
     byteSize: v.number(),
     originalReady: v.boolean(),
     status: v.union(v.literal('pending'), v.literal('uploaded'), v.literal('paid'), v.literal('archived')),
@@ -60,23 +63,45 @@ export default defineSchema({
 
   orders: defineTable({
     artistId: v.string(),
+    eventId: v.optional(v.id('events')),
     artworkId: v.id('artworks'),
     customerId: v.id('customers'),
     type: v.union(v.literal('digital'), v.literal('print')),
     productSize: v.optional(v.union(v.literal('A5'), v.literal('A4'), v.literal('A3'))),
     amount: v.number(),
+    platformFee: v.optional(v.number()),
     currency: v.string(),
-    paymentStatus: v.union(v.literal('unpaid'), v.literal('pending'), v.literal('paid'), v.literal('failed'), v.literal('refunded')),
-    fulfilmentStatus: v.union(v.literal('not_applicable'), v.literal('pending'), v.literal('submitted'), v.literal('in_production'), v.literal('shipped'), v.literal('delivered'), v.literal('failed')),
+    paymentStatus: v.union(
+      v.literal('unpaid'),
+      v.literal('pending'),
+      v.literal('paid'),
+      v.literal('failed'),
+      v.literal('refunded')
+    ),
+    fulfilmentStatus: v.union(
+      v.literal('not_applicable'),
+      v.literal('pending'),
+      v.literal('submitted'),
+      v.literal('in_production'),
+      v.literal('shipped'),
+      v.literal('delivered'),
+      v.literal('failed'),
+      v.literal('cancelled')
+    ),
     stripeCheckoutSessionId: v.optional(v.string()),
+    stripePaymentIntentId: v.optional(v.string()),
     prodigiOrderId: v.optional(v.string()),
     shippingAddress: v.optional(v.any()),
+    failureMessage: v.optional(v.string()),
+    receiptSentAt: v.optional(v.number()),
     idempotencyKey: v.string(),
     createdAt: v.number(),
     paidAt: v.optional(v.number()),
   })
     .index('by_session', ['stripeCheckoutSessionId'])
-    .index('by_artwork', ['artworkId']),
+    .index('by_payment_intent', ['stripePaymentIntentId'])
+    .index('by_artwork', ['artworkId'])
+    .index('by_artist', ['artistId']),
 
   webhookEvents: defineTable({
     provider: v.union(v.literal('stripe'), v.literal('prodigi')),

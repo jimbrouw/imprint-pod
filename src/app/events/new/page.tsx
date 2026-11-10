@@ -1,16 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { useUser } from '@clerk/nextjs';
 import { ArrowLeft, DollarSign, Tag, Check } from 'lucide-react';
 import { useMutation } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
 
 
 export default function NewEventPage() {
-  const { user } = useUser();
   const [title, setTitle] = useState('');
   const [eventDate, setEventDate] = useState('');
   const [digitalPrice, setDigitalPrice] = useState('15');
@@ -23,6 +21,9 @@ export default function NewEventPage() {
 
   const router = useRouter();
   const createEvent = useMutation(api.events.createEvent);
+  const generateLogoUploadUrl = useMutation(api.events.generateLogoUploadUrl);
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,7 +31,13 @@ export default function NewEventPage() {
     setError(null);
 
     try {
-      const artistId = user?.id || 'demo-artist';
+      let logoStorageId: any = undefined;
+      if (logoFile) {
+        const uploadUrl = await generateLogoUploadUrl();
+        const up = await fetch(uploadUrl, { method: 'POST', headers: { 'Content-Type': logoFile.type }, body: logoFile });
+        if (!up.ok) throw new Error('Logo upload failed');
+        logoStorageId = (await up.json()).storageId;
+      }
       const digitalPriceMinor = Math.round(parseFloat(digitalPrice) * 100);
       const printPricesMinor = {
         A5: Math.round(parseFloat(priceA5) * 100),
@@ -39,8 +46,8 @@ export default function NewEventPage() {
       };
 
       const result = await createEvent({
-        artistId,
         title,
+        logoStorageId,
         eventDate: eventDate || new Date().toISOString().split('T')[0],
         digitalPrice: digitalPriceMinor,
         printPrices: printPricesMinor as { A5: number; A4: number; A3: number },
@@ -182,6 +189,27 @@ export default function NewEventPage() {
                 />
               </div>
             </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+              Event Logo (optional)
+            </label>
+            <input
+              ref={logoInputRef}
+              type="file"
+              accept="image/png, image/jpeg"
+              onChange={(e) => {
+                const f = e.target.files?.[0] || null;
+                if (f && f.size > 4 * 1024 * 1024) {
+                  setError('Logo must be under 4 MB');
+                  e.target.value = '';
+                  return;
+                }
+                setLogoFile(f);
+              }}
+              className="w-full text-xs text-slate-400 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-slate-800 file:text-slate-200"
+            />
           </div>
 
           <button

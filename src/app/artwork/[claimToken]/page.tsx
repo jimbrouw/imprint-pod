@@ -32,12 +32,23 @@ export default function ArtworkPurchasePage() {
   const handleCheckout = async (type: 'digital' | 'print') => {
     setSubmittingCheckout(true);
     setError(null);
-
-    // Simulate checkout process
-    setTimeout(() => {
-      const baseUrl = window.location.origin;
-      window.location.href = `${baseUrl}/checkout/success?session_id=mock_session_from_convex`;
-    }, 800);
+    try {
+      const res = await fetch('/api/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(
+          type === 'digital'
+            ? { claimToken, type }
+            : { claimToken, type, productSize: selectedSize, shipping }
+        ),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.url) throw new Error(data.error?.message || 'Unable to start checkout');
+      window.location.href = data.url;
+    } catch (err: any) {
+      setError(err.message || 'Unable to start checkout');
+      setSubmittingCheckout(false);
+    }
   };
 
   if (loading) {
@@ -60,7 +71,13 @@ export default function ArtworkPurchasePage() {
     );
   }
 
-  const { customerName, previewUrl, eventTitle, currency, isPaid } = artworkData;
+  const { customerName, previewUrl, eventTitle, currency, isPaid, originalReady, sellerReady, logoUrl } = artworkData;
+  const canBuy = originalReady && sellerReady;
+  const blockedReason = !sellerReady
+    ? 'This artist has not finished payment setup yet.'
+    : !originalReady
+    ? 'Finishing your artwork upload… this page will update automatically.'
+    : null;
   const digitalPrice = artworkData.digitalPrice ?? 1500;
   const printPrices = artworkData.printPrices ?? { A5: 1500, A4: 2200, A3: 3200 };
   const currSymbol = currency === 'gbp' ? '£' : currency === 'usd' ? '$' : '€';
@@ -73,14 +90,10 @@ export default function ArtworkPurchasePage() {
         <div className="flex flex-col items-center justify-center">
           <div className="relative w-full max-w-sm aspect-[3/4] bg-slate-950 rounded-2xl overflow-hidden border border-slate-800 shadow-2xl flex items-center justify-center p-2">
             <img
-              src={previewUrl || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop'}
+              src={previewUrl || ''}
               alt={`${customerName}'s Live Portrait`}
-              className="w-full h-full object-cover rounded-xl opacity-80"
+              className="w-full h-full object-contain rounded-xl"
             />
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/40 p-4 text-center">
-              <Sparkles className="w-8 h-8 text-sky-400 mb-2 opacity-80" />
-              <p className="text-sm font-bold text-white tracking-widest uppercase">Demo Artwork</p>
-            </div>
             <div className="absolute bottom-3 left-3 right-3 bg-slate-900/80 backdrop-blur-md border border-slate-800/80 rounded-xl py-2 px-3 text-center">
               <p className="text-xs text-slate-400">{eventTitle}</p>
               <p className="text-sm font-bold text-white">{customerName}'s Portrait</p>
@@ -91,6 +104,7 @@ export default function ArtworkPurchasePage() {
         {/* Right: Purchase Options */}
         <div className="flex flex-col justify-between space-y-6">
           <div>
+            {logoUrl && <img src={logoUrl} alt="" className="h-10 mb-3 object-contain" />}
             <div className="flex items-center gap-2 text-xs text-sky-400 font-semibold uppercase tracking-wider mb-1">
               <Sparkles className="w-4 h-4" /> Live Artwork Delivery
             </div>
@@ -101,6 +115,27 @@ export default function ArtworkPurchasePage() {
               Download your high-resolution digital artwork immediately or get an archival print delivered to your home.
             </p>
           </div>
+
+          {error && (
+            <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-400 text-xs flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" /> {error}
+            </div>
+          )}
+
+          {blockedReason && (
+            <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-300 text-xs">
+              {blockedReason}
+            </div>
+          )}
+
+          {isPaid && (
+            <a
+              href={`/api/artworks/${claimToken}/download`}
+              className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-bold py-4 px-6 rounded-2xl shadow-xl shadow-emerald-500/20 text-base transition-all flex items-center justify-center gap-2"
+            >
+              <Download className="w-5 h-5" /> Download Your Full-Resolution Portrait
+            </a>
+          )}
 
           {/* Option Selector Tabs */}
           <div className="grid grid-cols-2 gap-2 bg-slate-950 p-1.5 rounded-2xl border border-slate-800">
@@ -143,10 +178,10 @@ export default function ArtworkPurchasePage() {
 
               <button
                 onClick={() => handleCheckout('digital')}
-                disabled={submittingCheckout}
+                disabled={submittingCheckout || !canBuy || isPaid}
                 className="w-full bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-bold py-4 px-6 rounded-2xl shadow-xl shadow-sky-500/20 text-base transition-all disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                {submittingCheckout ? 'Redirecting...' : `Pay ${currSymbol}${(digitalPrice / 100).toFixed(2)} & Download`}
+                {submittingCheckout ? 'Redirecting...' : isPaid ? 'Purchased' : `Pay ${currSymbol}${(digitalPrice / 100).toFixed(2)} & Download`}
               </button>
             </div>
           ) : (
@@ -210,7 +245,7 @@ export default function ArtworkPurchasePage() {
 
               <button
                 onClick={() => handleCheckout('print')}
-                disabled={submittingCheckout || !shipping.line1 || !shipping.city || !shipping.postcode}
+                disabled={submittingCheckout || !canBuy || !shipping.line1 || !shipping.city || !shipping.postcode}
                 className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold py-4 px-6 rounded-2xl shadow-xl shadow-indigo-600/20 text-base transition-all disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {submittingCheckout

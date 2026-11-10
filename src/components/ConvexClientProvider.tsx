@@ -3,23 +3,16 @@
 import { ReactNode } from 'react';
 import { ClerkProvider, useAuth } from '@clerk/nextjs';
 import { ConvexProviderWithClerk } from 'convex/react-clerk';
-import { ConvexProvider, ConvexReactClient } from 'convex/react';
+import { ConvexReactClient } from 'convex/react';
 
+// Falls back to a placeholder URL so builds/prerender don't crash when the env var is missing
+// (e.g. a preview deploy without env configured). Real data requires NEXT_PUBLIC_CONVEX_URL.
 const rawUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
-const isConvexConfigured = rawUrl && !rawUrl.includes('placeholder') && rawUrl.startsWith('http');
+const convexUrl = rawUrl && rawUrl.startsWith('http') ? rawUrl : 'https://placeholder.convex.cloud';
 
-const convex = isConvexConfigured ? new ConvexReactClient(rawUrl!) : null;
+const convex = new ConvexReactClient(convexUrl);
 
 export default function ConvexClientProvider({ children }: { children: ReactNode }) {
-  if (!convex) {
-    // If Convex URL is not configured yet in .env.local, render standard layout without throwing fatal error
-    return (
-      <ClerkProvider signInUrl="/sign-in" signUpUrl="/sign-up">
-        {children}
-      </ClerkProvider>
-    );
-  }
-
   return (
     <ClerkProvider signInUrl="/sign-in" signUpUrl="/sign-up">
       <ConvexProviderWithClerk client={convex} useAuth={useAuth}>

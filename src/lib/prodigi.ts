@@ -1,6 +1,6 @@
 import { ProductSize, ShippingAddress } from './types';
 
-const PRODIGI_API_KEY = process.env.PRODIGI_API_KEY || 'mock-prodigi-key';
+const PRODIGI_API_KEY = process.env.PRODIGI_API_KEY || '';
 const PRODIGI_BASE_URL = process.env.PRODIGI_BASE_URL || 'https://api.sandbox.prodigi.com/v4.0';
 
 const SKU_MAP: Record<ProductSize, string> = {
@@ -16,10 +16,12 @@ export interface ProdigiOrderPayload {
   recipientName: string;
   shippingAddress: ShippingAddress;
   recipientEmail?: string;
+  callbackUrl?: string;
 }
 
 export async function createProdigiOrder(payload: ProdigiOrderPayload) {
-  if (PRODIGI_API_KEY === 'mock-prodigi-key') {
+  if (!PRODIGI_API_KEY) {
+    if (process.env.NODE_ENV === 'production') throw new Error('PRODIGI_API_KEY is not set');
     console.log('[PRODIGI MOCK] Creating print order:', payload.orderId);
     return {
       id: `prodigi_mock_${payload.orderId.slice(0, 8)}`,
@@ -37,6 +39,7 @@ export async function createProdigiOrder(payload: ProdigiOrderPayload) {
     body: JSON.stringify({
       idempotencyKey: payload.orderId,
       merchantReference: payload.orderId,
+      callbackUrl: payload.callbackUrl,
       shippingMethod: 'Budget',
       recipient: {
         name: payload.recipientName,
