@@ -22,7 +22,6 @@ export const serverCreateOrder = mutation({
     claimToken: v.string(),
     type: v.union(v.literal('digital'), v.literal('print')),
     productSize: v.optional(sizeValidator),
-    shippingAddress: v.optional(v.any()),
     idempotencyKey: v.string(),
   },
   handler: async (ctx, args) => {
@@ -59,7 +58,6 @@ export const serverCreateOrder = mutation({
       amount = event.digitalPrice;
     } else {
       if (!args.productSize) throw new Error('Choose a print size');
-      if (!args.shippingAddress) throw new Error('Shipping address required');
       amount = event.printPrices[args.productSize];
     }
 
@@ -74,7 +72,6 @@ export const serverCreateOrder = mutation({
       currency: event.currency,
       paymentStatus: 'unpaid',
       fulfilmentStatus: 'not_applicable',
-      shippingAddress: args.type === 'print' ? args.shippingAddress : undefined,
       idempotencyKey: args.idempotencyKey,
       createdAt: Date.now(),
     });
@@ -178,6 +175,15 @@ export const serverMarkPaid = mutation({
     const result = await buildContext(ctx, fresh, fresh.type === 'print');
     if (!result.customerEmail && args.customerEmail) result.customerEmail = args.customerEmail;
     return result;
+  },
+});
+
+/** Stores the delivery address Stripe collected at checkout. */
+export const serverSetShippingAddress = mutation({
+  args: { secret: v.string(), orderId: v.id('orders'), shippingAddress: v.any() },
+  handler: async (ctx, args) => {
+    requireServerSecret(args.secret);
+    await ctx.db.patch(args.orderId, { shippingAddress: args.shippingAddress });
   },
 });
 

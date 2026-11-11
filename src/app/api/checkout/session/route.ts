@@ -40,6 +40,7 @@ export async function GET(req: Request) {
       type: order.type,
       productSize: order.productSize,
       fulfilmentStatus: order.fulfilmentStatus,
+      receiptSent: order.receiptSent,
       claimToken: order.claimToken,
       amount: order.amount,
       currency: order.currency,

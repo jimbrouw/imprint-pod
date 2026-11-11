@@ -6,6 +6,22 @@ import { createProdigiOrder } from './prodigi';
 import { sendEmail, receiptEmail } from './email';
 import type { ShippingAddress } from './types';
 
+/** Maps the address Stripe collected (location depends on API version) to our ShippingAddress. */
+export function shippingFromSession(session: Stripe.Checkout.Session): ShippingAddress | null {
+  const s = session as any;
+  const details = s.collected_information?.shipping_details ?? s.shipping_details;
+  const a = details?.address;
+  if (!a?.line1 || !a?.postal_code || !a?.country) return null;
+  return {
+    line1: a.line1,
+    line2: a.line2 || undefined,
+    city: a.city || '',
+    state: a.state || undefined,
+    postcode: a.postal_code,
+    country: a.country,
+  };
+}
+
 /**
  * Idempotent post-payment handling: mark paid, submit print to Prodigi (once), send receipt (once).
  * Called from both the Stripe webhook and the checkout success page so whichever
@@ -29,9 +45,16 @@ export async function fulfilCheckoutSession(session: Stripe.Checkout.Session) {
 
   const orderId = ctx.orderId as Id<'orders'>;
 
-  // Print: submit to Prodigi exactly once.
+  // Print: save the address Stripe collected, then submit to Prodigi exactly once.
   if (ctx.type === 'print' && !ctx.prodigiOrderId && ctx.paymentStatus !== 'refunded') {
     try {
+      if (!ctx.shippingAddress) {
+        const address = shippingFromSession(session);
+        if (address) {
+          await convex.mutation(api.orders.serverSetShippingAddress, { secret, orderId, shippingAddress: address });
+          ctx.shippingAddress = address;
+        }
+      }
       if (!ctx.originalUrl) throw new Error('Original artwork file is missing');
       if (!ctx.productSize || !ctx.shippingAddress) throw new Error('Print order missing size or address');
       const callbackSecret = process.env.PRODIGI_WEBHOOK_SECRET || '';
