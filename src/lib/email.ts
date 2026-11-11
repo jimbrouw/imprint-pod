@@ -4,7 +4,7 @@
  */
 export async function sendEmail(opts: { to: string; subject: string; html: string }): Promise<boolean> {
   const key = process.env.RESEND_API_KEY;
-  const from = process.env.EMAIL_FROM || 'Live Artist Checkout <onboarding@resend.dev>';
+  const from = process.env.EMAIL_FROM || 'Drawn Checkout <onboarding@resend.dev>';
   if (!key) {
     console.warn('[email] RESEND_API_KEY not set; skipping email to', opts.to);
     return false;

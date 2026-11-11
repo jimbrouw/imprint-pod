@@ -3,8 +3,8 @@ import ConvexClientProvider from '@/components/ConvexClientProvider';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Live Artist Checkout',
-  description: 'Ultra-fast live event portrait delivery and checkout platform.',
+  title: 'Drawn Checkout',
+  description: 'Draw it. Share a link. Get paid.',
 };
 
 export default function RootLayout({

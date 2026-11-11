@@ -10,7 +10,7 @@ export function getStripe(): Stripe {
     if (!key) throw new Error('STRIPE_SECRET_KEY is not set');
     _stripe = new Stripe(key, {
       apiVersion: '2025-01-27.acacia' as any,
-      appInfo: { name: 'Live Artist Checkout', version: '1.0.0' },
+      appInfo: { name: 'Drawn Checkout', version: '1.0.0' },
     });
   }
   return _stripe;
