@@ -55,7 +55,7 @@ export const serverCreateOrder = mutation({
     let amount: number;
     if (args.type === 'digital') {
       if (artwork.status === 'paid') throw new Error('You have already purchased this artwork');
-      amount = event.digitalPrice;
+      amount = artwork.price ?? event.digitalPrice;
     } else {
       if (!args.productSize) throw new Error('Choose a print size');
       amount = event.printPrices[args.productSize];

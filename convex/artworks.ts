@@ -18,6 +18,7 @@ export const presignArtworkUpload = mutation({
     eventId: v.id('events'),
     customerId: v.optional(v.id('customers')),
     customerName: v.optional(v.string()),
+    price: v.optional(v.number()), // per-artwork digital price in minor units
     mimeType: v.string(), // mime type of the ORIGINAL
     originalByteSize: v.number(),
     previewByteSize: v.number(),
@@ -33,6 +34,10 @@ export const presignArtworkUpload = mutation({
     }
     if (args.previewByteSize < 1 || args.previewByteSize > MAX_PREVIEW_BYTES) {
       throw new Error('Preview too large');
+    }
+
+    if (args.price !== undefined && (!Number.isInteger(args.price) || args.price < 100 || args.price > 100000)) {
+      throw new Error('Price must be between 1.00 and 1000.00');
     }
 
     let customerId = args.customerId;
@@ -71,6 +76,7 @@ export const presignArtworkUpload = mutation({
         status: 'pending',
         mimeType: args.mimeType,
         byteSize: args.originalByteSize,
+        price: args.price ?? existing.price,
         uploadedAt: undefined,
       });
       artworkId = existing._id;
@@ -82,6 +88,7 @@ export const presignArtworkUpload = mutation({
         byteSize: args.originalByteSize,
         originalReady: false,
         status: 'pending',
+        price: args.price,
         createdAt: Date.now(),
       });
     }
@@ -166,7 +173,7 @@ export const getArtworkByToken = query({
       customerName: customer.name,
       eventTitle: event.title,
       logoUrl,
-      digitalPrice: event.digitalPrice,
+      digitalPrice: artwork.price ?? event.digitalPrice,
       printPrices: event.printPrices,
       currency: event.currency,
       previewUrl,

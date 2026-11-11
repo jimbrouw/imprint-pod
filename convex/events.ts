@@ -89,6 +89,65 @@ export const createEvent = mutation({
   },
 });
 
+function slugFor(title: string) {
+  const base =
+    title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 40) || 'event';
+  return `${base}-${randomHex(4)}`;
+}
+
+/** Returns the artist's hidden "quick sale" event, creating it (and the artist row) if missing. */
+export const getOrCreateDefault = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error('Not authenticated');
+    const userId = identity.subject;
+
+    const existing = (
+      await ctx.db
+        .query('events')
+        .withIndex('by_artist', (q) => q.eq('artistId', userId))
+        .collect()
+    ).find((e) => e.isDefault);
+    if (existing) return { eventId: existing._id, slug: existing.slug, currency: existing.currency };
+
+    let artist = await ctx.db
+      .query('artists')
+      .withIndex('by_user_id', (q) => q.eq('userId', userId))
+      .first();
+    if (!artist) {
+      const id = await ctx.db.insert('artists', {
+        userId,
+        name: identity.name || identity.email || 'Artist',
+        email: identity.email || '',
+        stripeOnboardingComplete: false,
+        defaultCurrency: 'gbp',
+        createdAt: Date.now(),
+      });
+      artist = (await ctx.db.get(id))!;
+    }
+
+    const title = (artist.name || 'Artist').slice(0, 160);
+    const eventId = await ctx.db.insert('events', {
+      artistId: userId,
+      title,
+      slug: slugFor(title),
+      isActive: true,
+      digitalPrice: 1500,
+      printPrices: { A5: 1500, A4: 2200, A3: 3200 },
+      currency: artist.defaultCurrency,
+      isDefault: true,
+      createdAt: Date.now(),
+    });
+    const event = (await ctx.db.get(eventId))!;
+    return { eventId, slug: event.slug, currency: event.currency };
+  },
+});
+
 export const setEventActive = mutation({
   args: { slug: v.string(), isActive: v.boolean() },
   handler: async (ctx, args) => {
@@ -99,25 +158,27 @@ export const setEventActive = mutation({
   },
 });
 
-// Dashboard: events + simple stats for the signed-in artist.
+// Dashboard: events, sales and simple stats for the signed-in artist.
 export const getDashboard = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { sinceMs: v.optional(v.number()) },
+  handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return null;
     const userId = identity.subject;
 
-    const events = await ctx.db
+    const allEvents = await ctx.db
       .query('events')
       .withIndex('by_artist', (q) => q.eq('artistId', userId))
       .order('desc')
       .collect();
+    const events = allEvents.filter((e) => !e.isDefault);
 
     const orders = await ctx.db
       .query('orders')
       .withIndex('by_artist', (q) => q.eq('artistId', userId))
       .collect();
     const paid = orders.filter((o) => o.paymentStatus === 'paid');
+    const net = (o: { amount: number; platformFee?: number }) => o.amount - (o.platformFee ?? 0);
 
     const artworks = await ctx.db
       .query('artworks')
@@ -143,10 +204,32 @@ export const getDashboard = query({
     for (const o of paid) {
       const stat = o.eventId ? perEvent.get(o.eventId) : undefined;
       if (stat) {
-        stat.revenue += o.amount - (o.platformFee ?? 0);
+        stat.revenue += net(o);
         if (o.type === 'print') stat.prints += 1;
       }
     }
+
+    // Recent sales: the 15 newest artworks across all events (including quick sales).
+    const newest = [...artworks].sort((a, b) => b.createdAt - a.createdAt).slice(0, 15);
+    const recentSales = [];
+    for (const a of newest) {
+      const customer = await ctx.db.get(a.customerId);
+      if (!customer) continue;
+      const event = await ctx.db.get(customer.eventId);
+      recentSales.push({
+        artworkId: a._id,
+        name: customer.name,
+        claimToken: customer.claimToken,
+        claimCode: customer.claimCode,
+        price: a.price ?? event?.digitalPrice ?? 0,
+        currency: event?.currency ?? 'gbp',
+        paid: a.status === 'paid',
+        createdAt: a.createdAt,
+      });
+    }
+
+    const since = args.sinceMs ?? 0;
+    const todayPaid = paid.filter((o) => (o.paidAt ?? 0) >= since);
 
     const artist = await ctx.db
       .query('artists')
@@ -157,9 +240,11 @@ export const getDashboard = query({
       stripeConnected: !!artist?.stripeAccountId,
       stripeOnboardingComplete: !!artist?.stripeOnboardingComplete,
       events: events.map((e) => ({ ...e, ...perEvent.get(e._id)! })),
+      recentSales,
+      today: { sales: todayPaid.length, earned: todayPaid.reduce((s, o) => s + net(o), 0) },
       totals: {
         portraits: artworks.filter((a) => a.status !== 'pending').length,
-        revenue: paid.reduce((s, o) => s + o.amount - (o.platformFee ?? 0), 0),
+        revenue: paid.reduce((s, o) => s + net(o), 0),
         printOrders: paid.filter((o) => o.type === 'print').length,
       },
     };
