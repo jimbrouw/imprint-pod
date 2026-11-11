@@ -45,7 +45,8 @@ export default defineSchema({
   })
     .index('by_claim_code', ['eventId', 'claimCode'])
     .index('by_claim_token', ['claimToken'])
-    .index('by_event', ['eventId']),
+    .index('by_event', ['eventId'])
+    .index('by_email', ['email']),
 
   artworks: defineTable({
     customerId: v.id('customers'),
@@ -104,6 +105,13 @@ export default defineSchema({
     .index('by_payment_intent', ['stripePaymentIntentId'])
     .index('by_artwork', ['artworkId'])
     .index('by_artist', ['artistId']),
+
+  // Fixed-window rate limiting for public routes (serverless-safe, unlike in-memory maps).
+  claimAttempts: defineTable({
+    key: v.string(), // e.g. "claim:<ip>:<slug>"
+    windowStart: v.number(),
+    count: v.number(),
+  }).index('by_key', ['key']),
 
   webhookEvents: defineTable({
     provider: v.union(v.literal('stripe'), v.literal('prodigi')),

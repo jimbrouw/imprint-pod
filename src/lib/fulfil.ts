@@ -46,7 +46,9 @@ export async function fulfilCheckoutSession(session: Stripe.Checkout.Session) {
   const orderId = ctx.orderId as Id<'orders'>;
 
   // Print: save the address Stripe collected, then submit to Prodigi exactly once.
+  // The webhook and the success page can race, so submission is claimed atomically in Convex.
   if (ctx.type === 'print' && !ctx.prodigiOrderId && ctx.paymentStatus !== 'refunded') {
+    let claimed = false;
     try {
       if (!ctx.shippingAddress) {
         const address = shippingFromSession(session);
@@ -57,25 +59,29 @@ export async function fulfilCheckoutSession(session: Stripe.Checkout.Session) {
       }
       if (!ctx.originalUrl) throw new Error('Original artwork file is missing');
       if (!ctx.productSize || !ctx.shippingAddress) throw new Error('Print order missing size or address');
-      const callbackSecret = process.env.PRODIGI_WEBHOOK_SECRET || '';
-      const prodigi = await createProdigiOrder({
-        orderId: ctx.orderId,
-        artworkUrl: ctx.originalUrl,
-        productSize: ctx.productSize,
-        recipientName: ctx.customerName,
-        recipientEmail: ctx.customerEmail ?? undefined,
-        shippingAddress: ctx.shippingAddress as ShippingAddress,
-        callbackUrl: callbackSecret
-          ? `${appUrl()}/api/webhooks/prodigi?secret=${encodeURIComponent(callbackSecret)}`
-          : undefined,
-      });
-      await convex.mutation(api.orders.serverSetFulfilment, {
-        secret,
-        orderId,
-        fulfilmentStatus: 'submitted',
-        prodigiOrderId: prodigi.id,
-      });
-      ctx.prodigiOrderId = prodigi.id;
+
+      claimed = await convex.mutation(api.orders.serverClaimPrintSubmission, { secret, orderId });
+      if (claimed) {
+        const callbackSecret = process.env.PRODIGI_WEBHOOK_SECRET || '';
+        const prodigi = await createProdigiOrder({
+          orderId: ctx.orderId, // also used as Prodigi's idempotencyKey
+          artworkUrl: ctx.originalUrl,
+          productSize: ctx.productSize,
+          recipientName: ctx.customerName,
+          recipientEmail: ctx.customerEmail ?? undefined,
+          shippingAddress: ctx.shippingAddress as ShippingAddress,
+          callbackUrl: callbackSecret
+            ? `${appUrl()}/api/webhooks/prodigi?secret=${encodeURIComponent(callbackSecret)}`
+            : undefined,
+        });
+        await convex.mutation(api.orders.serverSetFulfilment, {
+          secret,
+          orderId,
+          fulfilmentStatus: 'submitted',
+          prodigiOrderId: prodigi.id,
+        });
+        ctx.prodigiOrderId = prodigi.id;
+      }
     } catch (err: any) {
       await convex.mutation(api.orders.serverSetFulfilment, {
         secret,

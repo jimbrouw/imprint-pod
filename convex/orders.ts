@@ -168,7 +168,7 @@ export const serverMarkPaid = mutation({
 
     const customer = await ctx.db.get(order.customerId);
     if (customer && !customer.email && args.customerEmail) {
-      await ctx.db.patch(customer._id, { email: args.customerEmail });
+      await ctx.db.patch(customer._id, { email: args.customerEmail.trim().toLowerCase() });
     }
 
     const fresh = (await ctx.db.get(order._id))!;
@@ -184,6 +184,22 @@ export const serverSetShippingAddress = mutation({
   handler: async (ctx, args) => {
     requireServerSecret(args.secret);
     await ctx.db.patch(args.orderId, { shippingAddress: args.shippingAddress });
+  },
+});
+
+/**
+ * Atomically claims the right to submit a print to Prodigi. Convex mutations are serialised, so only
+ * the first caller (webhook or success page) gets `true`. A previously failed submission may be retried.
+ */
+export const serverClaimPrintSubmission = mutation({
+  args: { secret: v.string(), orderId: v.id('orders') },
+  handler: async (ctx, args) => {
+    requireServerSecret(args.secret);
+    const order = await ctx.db.get(args.orderId);
+    if (!order || order.type !== 'print' || order.paymentStatus !== 'paid' || order.prodigiOrderId) return false;
+    if (order.fulfilmentStatus !== 'pending' && order.fulfilmentStatus !== 'failed') return false;
+    await ctx.db.patch(args.orderId, { fulfilmentStatus: 'submitted', failureMessage: undefined });
+    return true;
   },
 });
 
@@ -230,9 +246,9 @@ export const serverMarkSessionFailed = mutation({
   },
 });
 
-/** Refund: revoke digital access and flag print orders. */
+/** Refund or dispute: revoke digital access and flag print orders. */
 export const serverMarkRefunded = mutation({
-  args: { secret: v.string(), paymentIntentId: v.string() },
+  args: { secret: v.string(), paymentIntentId: v.string(), failureMessage: v.optional(v.string()) },
   handler: async (ctx, args) => {
     requireServerSecret(args.secret);
     const order = await ctx.db
@@ -240,7 +256,10 @@ export const serverMarkRefunded = mutation({
       .withIndex('by_payment_intent', (q) => q.eq('stripePaymentIntentId', args.paymentIntentId))
       .first();
     if (!order || order.paymentStatus === 'refunded') return false;
-    await ctx.db.patch(order._id, { paymentStatus: 'refunded' });
+    await ctx.db.patch(order._id, {
+      paymentStatus: 'refunded',
+      ...(args.failureMessage ? { failureMessage: args.failureMessage } : {}),
+    });
     if (order.type === 'digital') {
       const artwork = await ctx.db.get(order.artworkId);
       if (artwork && artwork.status === 'paid') await ctx.db.patch(artwork._id, { status: 'uploaded' });
@@ -294,5 +313,29 @@ export const serverWebhookDone = mutation({
       payload: { type: args.type },
       processedAt: Date.now(),
     });
+  },
+});
+
+/** Paid digital artworks for an email address (for "resend my link"). Server only; never returned to clients as-is. */
+export const serverFindPaidLinksByEmail = query({
+  args: { secret: v.string(), email: v.string() },
+  handler: async (ctx, args) => {
+    requireServerSecret(args.secret);
+    const email = args.email.trim().toLowerCase();
+    const customers = await ctx.db
+      .query('customers')
+      .withIndex('by_email', (q) => q.eq('email', email))
+      .take(20);
+    const links: { claimToken: string; eventTitle: string }[] = [];
+    for (const c of customers) {
+      const artwork = await ctx.db
+        .query('artworks')
+        .withIndex('by_customer', (q) => q.eq('customerId', c._id))
+        .first();
+      if (artwork?.status !== 'paid') continue;
+      const event = await ctx.db.get(c.eventId);
+      links.push({ claimToken: c.claimToken, eventTitle: event?.title ?? 'Your drawing' });
+    }
+    return links;
   },
 });
