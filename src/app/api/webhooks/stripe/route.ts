@@ -61,6 +61,19 @@ export async function POST(req: Request) {
         }
         break;
       }
+      case 'charge.dispute.created': {
+        // A chargeback: treat like a refund (revoke access) and record why.
+        const dispute = event.data.object as Stripe.Dispute;
+        const pi = typeof dispute.payment_intent === 'string' ? dispute.payment_intent : dispute.payment_intent?.id;
+        if (pi) {
+          await convex.mutation(api.orders.serverMarkRefunded, {
+            secret,
+            paymentIntentId: pi,
+            failureMessage: 'Disputed',
+          });
+        }
+        break;
+      }
       case 'account.updated': {
         const account = event.data.object as Stripe.Account;
         await convex.mutation(api.artists.serverSetOnboardingStatus, {

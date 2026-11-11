@@ -8,22 +8,23 @@ export const dynamic = 'force-dynamic';
 
 const Body = z.object({ claimCode: z.string().trim().regex(/^[A-Za-z0-9]{6}$/) });
 
-// Best-effort brute-force throttle (per server instance): 10 attempts / minute / IP+event.
-const attempts = new Map<string, number[]>();
-function throttled(key: string) {
-  const now = Date.now();
-  const recent = (attempts.get(key) || []).filter((t) => now - t < 60_000);
-  recent.push(now);
-  attempts.set(key, recent);
-  if (attempts.size > 5000) attempts.clear();
-  return recent.length > 10;
-}
-
 export async function POST(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
-  if (throttled(`${ip}:${slug}`)) {
-    return NextResponse.json({ error: { message: 'Too many attempts. Wait a minute and try again.' } }, { status: 429 });
+  try {
+    // 10 attempts per minute per IP+event, enforced in Convex so it holds across serverless instances.
+    const allowed = await convexServer().mutation(api.rateLimit.serverCheckRateLimit, {
+      secret: serverSecret(),
+      key: `claim:${ip}:${slug}`,
+      limit: 10,
+      windowMs: 60_000,
+    });
+    if (!allowed) {
+      return NextResponse.json({ error: { message: 'Too many attempts. Wait a minute and try again.' } }, { status: 429 });
+    }
+  } catch (err) {
+    console.error('[claim] rate limit', err);
+    return NextResponse.json({ error: { message: 'Claim failed' } }, { status: 500 });
   }
 
   const parsed = Body.safeParse(await req.json().catch(() => null));

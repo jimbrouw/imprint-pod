@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { ArrowRight, AlertCircle } from 'lucide-react';
-import { page, card, h1, muted, label, input, btnPrimary, alertError } from '@/components/ui';
+import { page, card, h1, h2, muted, label, input, btnPrimary, btnSecondary, alertError, alertOk } from '@/components/ui';
 
 export default function PublicEventClaimPage() {
   const params = useParams();
@@ -15,6 +15,9 @@ export default function PublicEventClaimPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [resendEmail, setResendEmail] = useState('');
+  const [resendBusy, setResendBusy] = useState(false);
+  const [resendMsg, setResendMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   useEffect(() => {
     async function loadEvent() {
@@ -67,6 +70,25 @@ export default function PublicEventClaimPage() {
     }
   };
 
+  const handleResend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setResendBusy(true);
+    setResendMsg(null);
+    try {
+      const res = await fetch('/api/public/resend-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: resendEmail }),
+      });
+      const data = await res.json();
+      setResendMsg(res.ok ? { ok: true, text: data.message } : { ok: false, text: data.error?.message || 'Something went wrong.' });
+    } catch {
+      setResendMsg({ ok: false, text: 'Something went wrong. Please try again.' });
+    } finally {
+      setResendBusy(false);
+    }
+  };
+
   if (loading) {
     return <div className={`${page} flex items-center justify-center ${muted}`}>Loading…</div>;
   }
@@ -113,6 +135,26 @@ export default function PublicEventClaimPage() {
         </form>
 
         <p className={`${muted} mt-6`}>You can also scan the QR code on the artist&apos;s screen.</p>
+
+        <form onSubmit={handleResend} className="mt-8 pt-6 border-t border-stone-200 space-y-3 text-left">
+          <h2 className={h2}>Already paid? Email me my link</h2>
+          <label htmlFor="resend-email" className={label}>
+            Email you paid with
+          </label>
+          <input
+            id="resend-email"
+            type="email"
+            autoComplete="email"
+            required
+            value={resendEmail}
+            onChange={(e) => setResendEmail(e.target.value)}
+            className={input}
+          />
+          <button type="submit" disabled={resendBusy || !resendEmail} className={`${btnSecondary} w-full`}>
+            {resendBusy ? 'Sending…' : 'Email me my link'}
+          </button>
+          {resendMsg && <div className={resendMsg.ok ? alertOk : alertError}>{resendMsg.text}</div>}
+        </form>
       </div>
     </div>
   );
