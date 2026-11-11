@@ -8,6 +8,7 @@ import { api } from '../../../../../convex/_generated/api';
 import type { Id } from '../../../../../convex/_generated/dataModel';
 
 import { generateQRCodeDataUrl } from '@/lib/qr';
+import { uploadArtwork, validateImageFile } from '@/lib/upload';
 import { ArrowLeft, Upload, Check, Zap, QrCode, Copy, RefreshCw, AlertCircle } from 'lucide-react';
 
 export default function iPadUploadTerminalPage() {
@@ -54,12 +55,9 @@ export default function iPadUploadTerminalPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!['image/png', 'image/jpeg'].includes(file.type)) {
-      setError('Only PNG or JPEG images are supported.');
-      return;
-    }
-    if (file.size > 25 * 1024 * 1024) {
-      setError('File size must be under 25 MB.');
+    const problem = validateImageFile(file);
+    if (problem) {
+      setError(problem);
       return;
     }
 
@@ -68,57 +66,6 @@ export default function iPadUploadTerminalPage() {
     const objectUrl = URL.createObjectURL(file);
     setPreviewSrc(objectUrl);
   };
-
-  // Client-side image resize helper to create ~200KB preview image for lightning upload
-  const createPreviewBlob = (file: File): Promise<Blob> => {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 1200;
-        let width = img.width;
-        let height = img.height;
-
-        if (width > MAX_WIDTH) {
-          height = Math.round((height * MAX_WIDTH) / width);
-          width = MAX_WIDTH;
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return reject(new Error('Canvas context unavailable'));
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, width, height);
-        ctx.drawImage(img, 0, 0, width, height);
-        // Diagonal tiled watermark so the free preview isn't a substitute for the paid original.
-        ctx.save();
-        ctx.globalAlpha = 0.22;
-        ctx.fillStyle = '#0f172a';
-        ctx.font = `bold ${Math.round(width / 16)}px sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.rotate(-Math.PI / 6);
-        const step = Math.round(width / 3.2);
-        for (let y = -width; y < height + width; y += step) {
-          for (let x = -width; x < width * 2; x += step * 1.6) ctx.fillText('PREVIEW', x, y);
-        }
-        ctx.restore();
-
-        canvas.toBlob(
-          (blob) => {
-            if (blob) resolve(blob);
-            else reject(new Error('Canvas blob generation failed'));
-          },
-          'image/jpeg',
-          0.85
-        );
-      };
-      img.onerror = () => reject(new Error('Image loading error'));
-      img.src = URL.createObjectURL(file);
-    });
-  };
-
 
   const handleFastUpload = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -129,62 +76,38 @@ export default function iPadUploadTerminalPage() {
 
     setUploading(true);
     setError(null);
-    setUploadProgress(10);
-    setUploadStep('Generating fast preview...');
+    setUploadProgress(5);
+    setUploadStep('Starting…');
 
     try {
       if (!event) throw new Error('Event not loaded');
 
-      // 1. Small watermarked preview (fast) ...
-      const previewBlob = await createPreviewBlob(selectedFile);
-      setUploadProgress(25);
-      setUploadStep('Preparing upload...');
-
-      const preset = await presignArtworkUpload({
-        eventId: event._id,
-        customerId: initialCustomerId ? (initialCustomerId as Id<'customers'>) : undefined,
-        customerName: customerName.trim(),
-        mimeType: selectedFile.type,
-        originalByteSize: selectedFile.size,
-        previewByteSize: previewBlob.size,
+      const { preset, syncOriginal: runSync } = await uploadArtwork({
+        file: selectedFile,
+        presign: (a) =>
+          presignArtworkUpload({
+            eventId: event._id,
+            customerId: initialCustomerId ? (initialCustomerId as Id<'customers'>) : undefined,
+            customerName: customerName.trim(),
+            ...a,
+          }),
+        completePreview,
+        completeOriginal,
+        onProgress: (pct, step) => {
+          setUploadProgress(pct);
+          setUploadStep(step);
+        },
       });
 
-      setUploadProgress(45);
-      setUploadStep('Uploading preview...');
-
-      const previewRes = await fetch(preset.previewUploadUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'image/jpeg' },
-        body: previewBlob,
-      });
-      if (!previewRes.ok) throw new Error('Preview upload failed. Check your connection and retry.');
-      const { storageId: previewStorageId } = await previewRes.json();
-      await completePreview({ artworkId: preset.artworkId, storageId: previewStorageId });
-
-      setUploadProgress(80);
-      setUploadStep('Finalizing claim QR code...');
-
-      const artworkClaimUrl = `${window.location.origin}/artwork/${preset.claimToken}`;
-      const qrDataUrl = await generateQRCodeDataUrl(artworkClaimUrl);
-
+      const qrDataUrl = await generateQRCodeDataUrl(`${window.location.origin}/artwork/${preset.claimToken}`);
       setCompletedClaimCode(preset.claimCode);
       setCompletedQrUrl(qrDataUrl);
-      setUploadProgress(100);
-      setUploadStep('Done! Artwork claimable now.');
 
-      // 2. ... then the full-resolution original in the background. Customers can't pay until it lands.
-      const file = selectedFile;
+      // The original uploads in the background; customers can't pay until it lands.
       const syncOriginal = async () => {
         setOriginalSync('uploading');
         try {
-          const res = await fetch(preset.originalUploadUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': file.type },
-            body: file,
-          });
-          if (!res.ok) throw new Error('Original upload failed');
-          const { storageId } = await res.json();
-          await completeOriginal({ artworkId: preset.artworkId, storageId });
+          await runSync();
           setOriginalSync('done');
           pendingOriginal.current = null;
         } catch {
@@ -226,7 +149,7 @@ export default function iPadUploadTerminalPage() {
           >
             <ArrowLeft className="w-4 h-4" /> Exit Terminal
           </Link>
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-brand-600 text-white border border-brand-100 text-brand-600 rounded-full text-sm font-semibold hover:bg-brand-700">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-brand-50 border border-brand-100 text-brand-600 rounded-full text-sm font-semibold">
             <Zap className="w-3.5 h-3.5" /> &lt;30s Speed Handoff
           </span>
         </div>
@@ -337,7 +260,7 @@ export default function iPadUploadTerminalPage() {
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    <div className="w-12 h-12 bg-brand-600 text-white text-brand-600 rounded-xl flex items-center justify-center mx-auto hover:bg-brand-700">
+                    <div className="w-12 h-12 bg-brand-50 text-brand-600 rounded-xl flex items-center justify-center mx-auto">
                       <Upload className="w-6 h-6" />
                     </div>
                     <p className="text-sm font-semibold text-stone-800">Tap to select Procreate portrait export</p>
