@@ -8,6 +8,7 @@ import {
   MAX_PREVIEW_BYTES,
 } from './helpers';
 import { insertCustomer } from './customers';
+import { validateDigitalPrice } from './pricing';
 
 /**
  * Artist starts an upload. Creates (or reuses) the customer + artwork records and
@@ -36,8 +37,9 @@ export const presignArtworkUpload = mutation({
       throw new Error('Preview too large');
     }
 
-    if (args.price !== undefined && (!Number.isInteger(args.price) || args.price < 100 || args.price > 100000)) {
-      throw new Error('Price must be between 1.00 and 1000.00');
+    if (args.price !== undefined) {
+      const priceError = validateDigitalPrice(args.price);
+      if (priceError) throw new Error(priceError);
     }
 
     let customerId = args.customerId;

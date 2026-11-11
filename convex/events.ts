@@ -2,6 +2,7 @@ import { query, mutation } from './_generated/server';
 import type { QueryCtx, MutationCtx } from './_generated/server';
 import { v } from 'convex/values';
 import { requireUserId, randomHex } from './helpers';
+import { validateDigitalPrice, validatePrintPrices } from './pricing';
 
 async function getOwnedEventBySlug(ctx: QueryCtx | MutationCtx, slug: string, userId: string) {
   const event = await ctx.db
@@ -36,10 +37,11 @@ export const createEvent = mutation({
 
     const title = args.title.trim();
     if (title.length < 1 || title.length > 160) throw new Error('Event name must be 1-160 characters');
-    const prices = [args.digitalPrice, args.printPrices.A5, args.printPrices.A4, args.printPrices.A3];
-    if (prices.some((p) => !Number.isInteger(p) || p < 100 || p > 100000)) {
-      throw new Error('Prices must be between 1.00 and 1000.00');
-    }
+    const priceError =
+      validateDigitalPrice(args.digitalPrice) ??
+      // Set PRINTS_ENABLED=true in the Convex env when prints go live (enables the margin guard).
+      validatePrintPrices(args.printPrices, { printsEnabled: process.env.PRINTS_ENABLED === 'true' });
+    if (priceError) throw new Error(priceError);
 
     // Make sure there is an artist profile for this user.
     const artist = await ctx.db
