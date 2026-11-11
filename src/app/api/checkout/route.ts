@@ -9,29 +9,19 @@ import type { Id } from '../../../../convex/_generated/dataModel';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const Shipping = z.object({
-  line1: z.string().trim().min(1).max(200),
-  line2: z.string().trim().max(200).optional(),
-  city: z.string().trim().min(1).max(100),
-  state: z.string().trim().max(100).optional(),
-  postcode: z.string().trim().min(2).max(20),
-  country: z.string().trim().length(2).toUpperCase().default('GB'),
-});
-
 const Body = z.discriminatedUnion('type', [
   z.object({ claimToken: z.string().min(32).max(128), type: z.literal('digital') }),
   z.object({
     claimToken: z.string().min(32).max(128),
     type: z.literal('print'),
     productSize: z.enum(['A5', 'A4', 'A3']),
-    shipping: Shipping,
   }),
 ]);
 
 export async function POST(req: Request) {
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
-    return NextResponse.json({ error: { message: 'Invalid checkout request. Check your address details.' } }, { status: 400 });
+    return NextResponse.json({ error: { message: 'Invalid checkout request.' } }, { status: 400 });
   }
   const body = parsed.data;
 
@@ -46,7 +36,6 @@ export async function POST(req: Request) {
       claimToken: body.claimToken,
       type: body.type,
       productSize: body.type === 'print' ? body.productSize : undefined,
-      shippingAddress: body.type === 'print' ? body.shipping : undefined,
       idempotencyKey,
     });
   } catch (err: any) {
@@ -79,6 +68,8 @@ export async function POST(req: Request) {
             },
           },
         ],
+        // Stripe collects the delivery address for prints (UK only at launch).
+        ...(body.type === 'print' ? { shipping_address_collection: { allowed_countries: ['GB' as const] } } : {}),
         payment_intent_data: {
           application_fee_amount: fee,
           transfer_data: { destination: order.stripeAccountId },

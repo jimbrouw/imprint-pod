@@ -15,6 +15,8 @@ import type * as customers from "../customers.js";
 import type * as events from "../events.js";
 import type * as helpers from "../helpers.js";
 import type * as orders from "../orders.js";
+import type * as pricing from "../pricing.js";
+import type * as rateLimit from "../rateLimit.js";
 
 import type {
   ApiFromModules,
@@ -30,6 +32,8 @@ declare const fullApi: ApiFromModules<{
   events: typeof events;
   helpers: typeof helpers;
   orders: typeof orders;
+  pricing: typeof pricing;
+  rateLimit: typeof rateLimit;
 }>;
 
 /**

@@ -4,7 +4,7 @@
  */
 export async function sendEmail(opts: { to: string; subject: string; html: string }): Promise<boolean> {
   const key = process.env.RESEND_API_KEY;
-  const from = process.env.EMAIL_FROM || 'Live Artist Checkout <onboarding@resend.dev>';
+  const from = process.env.EMAIL_FROM || 'Drawn Checkout <onboarding@resend.dev>';
   if (!key) {
     console.warn('[email] RESEND_API_KEY not set; skipping email to', opts.to);
     return false;
@@ -46,16 +46,30 @@ export function receiptEmail(p: {
   const what = p.type === 'digital' ? 'Digital portrait' : `${p.productSize} archival print`;
   const extra =
     p.type === 'digital'
-      ? `<p><a href="${esc(p.artworkUrl)}" style="display:inline-block;background:#0ea5e9;color:#fff;padding:12px 20px;border-radius:12px;text-decoration:none;font-weight:600">Download your portrait</a></p>`
+      ? `<p><a href="${esc(p.artworkUrl)}" style="display:inline-block;background:#0369a1;color:#fff;padding:12px 20px;border-radius:12px;text-decoration:none;font-weight:600">Download your portrait</a></p>`
       : `<p>Your ${esc(p.productSize || '')} print has been sent to our print lab. We'll email you when it ships.</p><p><a href="${esc(p.artworkUrl)}">View your artwork</a></p>`;
   return {
     subject: `Your portrait from ${p.eventTitle}`,
-    html: `<div style="font-family:-apple-system,Segoe UI,sans-serif;max-width:480px;margin:auto;color:#0f172a">
+    html: `<div style="font-family:-apple-system,Segoe UI,sans-serif;max-width:480px;margin:auto;color:#1c1917">
       <h2>Thanks, ${esc(p.customerName)}!</h2>
       <p>Payment received for <strong>${esc(what)}</strong> from <strong>${esc(p.eventTitle)}</strong>.</p>
       <p>Total: <strong>${esc(money(p.amount, p.currency))}</strong></p>
       ${extra}
-      <p style="color:#64748b;font-size:12px">Keep this email &mdash; the link above is your personal download page.</p>
+      <p style="color:#57534e;font-size:12px">Keep this email &mdash; the link above is your personal download page.</p>
+    </div>`,
+  };
+}
+
+export function resendLinkEmail(links: { eventTitle: string; url: string }[]) {
+  const items = links
+    .map((l) => `<li style="margin:8px 0"><a href="${esc(l.url)}">${esc(l.eventTitle)}</a></li>`)
+    .join('');
+  return {
+    subject: 'Your Drawn Checkout download link',
+    html: `<div style="font-family:-apple-system,Segoe UI,sans-serif;max-width:480px;margin:auto;color:#1c1917">
+      <h2>Your drawings</h2>
+      <p>Here ${links.length === 1 ? 'is your link' : 'are your links'} to download what you bought:</p>
+      <ul>${items}</ul>
     </div>`,
   };
 }

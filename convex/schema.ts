@@ -28,6 +28,7 @@ export default defineSchema({
       A3: v.number(),
     }),
     currency: v.union(v.literal('gbp'), v.literal('usd'), v.literal('eur')),
+    isDefault: v.optional(v.boolean()), // the artist's hidden "quick sale" event
     createdAt: v.number(),
   })
     .index('by_slug', ['slug'])
@@ -44,7 +45,8 @@ export default defineSchema({
   })
     .index('by_claim_code', ['eventId', 'claimCode'])
     .index('by_claim_token', ['claimToken'])
-    .index('by_event', ['eventId']),
+    .index('by_event', ['eventId'])
+    .index('by_email', ['email']),
 
   artworks: defineTable({
     customerId: v.id('customers'),
@@ -54,6 +56,7 @@ export default defineSchema({
     mimeType: v.string(), // mime type of the ORIGINAL file
     byteSize: v.number(),
     originalReady: v.boolean(),
+    price: v.optional(v.number()), // minor units; overrides the event's digitalPrice
     status: v.union(v.literal('pending'), v.literal('uploaded'), v.literal('paid'), v.literal('archived')),
     uploadedAt: v.optional(v.number()),
     createdAt: v.number(),
@@ -102,6 +105,13 @@ export default defineSchema({
     .index('by_payment_intent', ['stripePaymentIntentId'])
     .index('by_artwork', ['artworkId'])
     .index('by_artist', ['artistId']),
+
+  // Fixed-window rate limiting for public routes (serverless-safe, unlike in-memory maps).
+  claimAttempts: defineTable({
+    key: v.string(), // e.g. "claim:<ip>:<slug>"
+    windowStart: v.number(),
+    count: v.number(),
+  }).index('by_key', ['key']),
 
   webhookEvents: defineTable({
     provider: v.union(v.literal('stripe'), v.literal('prodigi')),

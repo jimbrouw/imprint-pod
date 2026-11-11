@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { QrCode, Search, ArrowRight, Palette, AlertCircle } from 'lucide-react';
+import { ArrowRight, AlertCircle } from 'lucide-react';
+import { page, card, h1, h2, muted, label, input, btnPrimary, btnSecondary, alertError, alertOk } from '@/components/ui';
 
 export default function PublicEventClaimPage() {
   const params = useParams();
@@ -14,6 +15,9 @@ export default function PublicEventClaimPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [resendEmail, setResendEmail] = useState('');
+  const [resendBusy, setResendBusy] = useState(false);
+  const [resendMsg, setResendMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   useEffect(() => {
     async function loadEvent() {
@@ -41,7 +45,7 @@ export default function PublicEventClaimPage() {
 
     const cleanCode = claimCode.trim().toUpperCase();
     if (cleanCode.length !== 6) {
-      setError('Please enter a valid 6-character claim code.');
+      setError('Please enter the 6-character code.');
       setSubmitting(false);
       return;
     }
@@ -66,68 +70,91 @@ export default function PublicEventClaimPage() {
     }
   };
 
+  const handleResend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setResendBusy(true);
+    setResendMsg(null);
+    try {
+      const res = await fetch('/api/public/resend-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: resendEmail }),
+      });
+      const data = await res.json();
+      setResendMsg(res.ok ? { ok: true, text: data.message } : { ok: false, text: data.error?.message || 'Something went wrong.' });
+    } catch {
+      setResendMsg({ ok: false, text: 'Something went wrong. Please try again.' });
+    } finally {
+      setResendBusy(false);
+    }
+  };
+
   if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400">
-        Loading event page...
-      </div>
-    );
+    return <div className={`${page} flex items-center justify-center ${muted}`}>Loading…</div>;
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-4 flex items-center justify-center">
-      <div className="w-full max-w-md bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl backdrop-blur-md text-center">
-        {eventData?.logoUrl ? (
-          <img src={eventData.logoUrl} alt="" className="h-16 mx-auto mb-4 object-contain" />
-        ) : (
-          <div className="w-16 h-16 bg-gradient-to-tr from-sky-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-sky-500/20 mx-auto mb-4">
-            <Palette className="w-8 h-8 text-white" />
-          </div>
-        )}
+    <div className={`${page} p-4 flex items-center justify-center`}>
+      <div className={`${card} w-full max-w-md text-center`}>
+        {eventData?.logoUrl && <img src={eventData.logoUrl} alt="" className="h-16 mx-auto mb-4 object-contain" />}
 
-        <h1 className="text-2xl font-extrabold text-white tracking-tight mb-1">
-          {eventData?.title || 'Live Artist Portrait'}
-        </h1>
-        <p className="text-sm text-slate-400 mb-8">
-          Enter your 6-character claim code from the artist to view and download your portrait.
-        </p>
+        <h1 className={`${h1} mb-2`}>{eventData?.title || 'Your drawing'}</h1>
+        <p className={`${muted} mb-6`}>Enter the 6-character code the artist gave you.</p>
 
         {error && (
-          <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/30 rounded-2xl text-rose-400 text-sm flex items-center justify-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
+          <div className={`${alertError} mb-6 text-left`}>
+            <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
             <span>{error}</span>
           </div>
         )}
 
-        <form onSubmit={handleClaim} className="space-y-4">
+        <form onSubmit={handleClaim} className="space-y-4 text-left">
           <div>
-            <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
-              6-Character Claim Code
+            <label htmlFor="claim-code" className={label}>
+              Your code
             </label>
             <input
+              id="claim-code"
               type="text"
+              inputMode="text"
+              autoCapitalize="characters"
+              autoComplete="off"
               maxLength={6}
               required
               value={claimCode}
               onChange={(e) => setClaimCode(e.target.value.toUpperCase())}
               placeholder="e.g. 4K7M2Q"
-              className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-4 text-center font-mono text-2xl font-extrabold tracking-widest text-sky-400 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-sky-500 uppercase"
+              className={`${input} text-center font-mono text-2xl font-bold tracking-widest uppercase min-h-14`}
             />
           </div>
 
-          <button
-            type="submit"
-            disabled={submitting || claimCode.length !== 6}
-            className="w-full bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-bold py-4 px-6 rounded-2xl shadow-xl shadow-sky-500/20 text-base transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-          >
-            {submitting ? 'Finding Portrait...' : 'Find My Portrait'}
+          <button type="submit" disabled={submitting || claimCode.length !== 6} className={`${btnPrimary} w-full`}>
+            {submitting ? 'Finding your drawing…' : 'Find my drawing'}
             <ArrowRight className="w-5 h-5" />
           </button>
         </form>
 
-        <p className="text-xs text-slate-500 mt-6">
-          Alternatively, scan the per-artwork QR code directly from the artist's screen.
-        </p>
+        <p className={`${muted} mt-6`}>You can also scan the QR code on the artist&apos;s screen.</p>
+
+        <form onSubmit={handleResend} className="mt-8 pt-6 border-t border-stone-200 space-y-3 text-left">
+          <h2 className={h2}>Already paid? Email me my link</h2>
+          <label htmlFor="resend-email" className={label}>
+            Email you paid with
+          </label>
+          <input
+            id="resend-email"
+            type="email"
+            autoComplete="email"
+            required
+            value={resendEmail}
+            onChange={(e) => setResendEmail(e.target.value)}
+            className={input}
+          />
+          <button type="submit" disabled={resendBusy || !resendEmail} className={`${btnSecondary} w-full`}>
+            {resendBusy ? 'Sending…' : 'Email me my link'}
+          </button>
+          {resendMsg && <div className={resendMsg.ok ? alertOk : alertError}>{resendMsg.text}</div>}
+        </form>
       </div>
     </div>
   );

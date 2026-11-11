@@ -3,8 +3,8 @@ import ConvexClientProvider from '@/components/ConvexClientProvider';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Live Artist Checkout',
-  description: 'Ultra-fast live event portrait delivery and checkout platform.',
+  title: 'Drawn Checkout',
+  description: 'Draw it. Share a link. Get paid.',
 };
 
 export default function RootLayout({
@@ -14,7 +14,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="antialiased bg-slate-950 text-slate-50 selection:bg-sky-500 selection:text-white min-h-screen">
+      <body className="antialiased bg-stone-50 text-stone-900 min-h-screen">
         <ConvexClientProvider>
           {children}
         </ConvexClientProvider>

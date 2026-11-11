@@ -1,215 +1,157 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Plus, Calendar, CreditCard, LogOut, ArrowRight, Image as ImageIcon, Banknote, Package } from 'lucide-react';
+import { Plus, LogOut, ArrowRight, QrCode } from 'lucide-react';
 import { useUser, useClerk } from '@clerk/nextjs';
 import { useQuery } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
+import { useStripeConnect } from '@/lib/useStripeConnect';
+import { page, card, h2, muted, btnPrimary, btnSecondary, alertError } from '@/components/ui';
+
+const fmt = (minor: number, currency = 'gbp') =>
+  new Intl.NumberFormat('en-GB', { style: 'currency', currency: currency.toUpperCase() }).format(minor / 100);
 
 export default function DashboardPage() {
   const router = useRouter();
   const { user } = useUser();
   const { signOut } = useClerk();
+  const stripe = useStripeConnect();
 
-  const dashboard = useQuery(api.events.getDashboard);
-  const events = dashboard?.events ?? [];
-  const today = new Date().toISOString().split('T')[0];
-  const upcoming = events.filter((e) => !e.eventDate || e.eventDate >= today);
-  const past = events.filter((e) => e.eventDate && e.eventDate < today);
-
-  const [stripeComplete, setStripeComplete] = useState<boolean | null>(null);
-  const [stripeError, setStripeError] = useState<string | null>(null);
-  const [connecting, setConnecting] = useState(false);
-  const artistName = user?.fullName || user?.username || 'Artist';
-
-  // Sync Stripe onboarding status (also runs when returning from Stripe's hosted onboarding).
-  useEffect(() => {
-    fetch('/api/connect/status')
-      .then((r) => r.json())
-      .then((d) => setStripeComplete(!!d.complete))
-      .catch(() => setStripeComplete(false));
+  // Local midnight, fixed for the life of the page so the query doesn't re-subscribe.
+  const sinceMs = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
   }, []);
-
-  const money = (minor: number) =>
-    (minor / 100).toLocaleString('en-GB', { style: 'currency', currency: 'GBP' });
+  const dashboard = useQuery(api.events.getDashboard, { sinceMs });
+  const events = dashboard?.events ?? [];
+  const artistName = user?.fullName || user?.username || 'Artist';
 
   const handleSignOut = async () => {
     if (signOut) await signOut();
     router.push('/sign-in');
   };
 
-  const handleConnectStripe = async () => {
-    setConnecting(true);
-    setStripeError(null);
-    try {
-      const res = await fetch('/api/connect/onboard', { method: 'POST' });
-      const data = await res.json();
-      if (data.url) {
-        window.location.href = data.url;
-        return;
-      }
-      setStripeError(data.error?.message || 'Could not start Stripe onboarding');
-    } catch {
-      setStripeError('Could not reach Stripe. Try again.');
-    } finally {
-      setConnecting(false);
-    }
-  };
+  const stripeLabel = {
+    loading: 'Checking…',
+    not_connected: 'Not connected',
+    finish_setup: 'Finish setup',
+    ready: 'Ready',
+  }[stripe.state];
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 pb-12">
-      {/* Top Header */}
-      <header className="border-b border-slate-800 bg-slate-900/50 backdrop-blur-md sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-sky-500/10 border border-sky-500/20 rounded-xl flex items-center justify-center text-sky-400 font-bold">
-              {artistName.charAt(0)}
-            </div>
-            <div>
-              <h1 className="font-bold text-slate-100 text-lg leading-tight">{artistName}</h1>
-              <p className="text-xs text-slate-400">Artist Dashboard</p>
-            </div>
-          </div>
-          <button
-            onClick={handleSignOut}
-            className="flex items-center gap-2 text-sm text-slate-400 hover:text-slate-200 px-3 py-2 rounded-lg hover:bg-slate-800 transition-colors"
-          >
-            <LogOut className="w-4 h-4" />
-            Sign Out
+    <div className={`${page} pb-12`}>
+      <header className="border-b border-stone-200 bg-white">
+        <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
+          <h1 className="font-bold text-lg">{artistName}</h1>
+          <button onClick={handleSignOut} className="inline-flex items-center gap-2 min-h-12 px-3 text-base text-stone-600">
+            <LogOut className="w-5 h-5" /> Sign out
           </button>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 pt-8 space-y-8">
-        {stripeComplete === false && (
-          <div className="bg-gradient-to-r from-indigo-900/40 via-purple-900/30 to-slate-900 border border-indigo-500/30 rounded-2xl p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-            <div className="flex items-start gap-4">
-              <div className="w-12 h-12 bg-indigo-500/20 border border-indigo-500/30 rounded-xl flex items-center justify-center text-indigo-400 shrink-0">
-                <CreditCard className="w-6 h-6" />
-              </div>
-              <div>
-                <h3 className="font-semibold text-white text-lg">Connect Stripe payouts</h3>
-                <p className="text-sm text-slate-300 mt-1">
-                  Connect your bank account via Stripe to receive instant payouts for live digital sales and prints.
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={handleConnectStripe}
-              className="bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-5 py-2.5 rounded-xl shadow-lg shadow-indigo-600/20 transition-all shrink-0"
-            >
-              {connecting ? 'Opening Stripe...' : dashboard?.stripeConnected ? 'Finish Stripe setup' : 'Connect Stripe'}
-            </button>
-          </div>
-        )}
+      <main className="max-w-3xl mx-auto px-4 pt-6 space-y-8">
+        <Link href="/sell" className={`${btnPrimary} w-full min-h-16 text-lg`}>
+          <Plus className="w-6 h-6" /> New sale
+        </Link>
 
-        {stripeError && (
-          <div className="p-4 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-400 text-sm">{stripeError}</div>
-        )}
+        {/* Stripe status: one clear state */}
+        <section className={`${card} flex items-center justify-between gap-4`}>
+          <div>
+            <p className={muted}>Payouts</p>
+            <p
+              className={`text-lg font-semibold ${
+                stripe.state === 'ready' ? 'text-green-700' : stripe.state === 'loading' ? 'text-stone-600' : 'text-amber-800'
+              }`}
+            >
+              {stripeLabel}
+            </p>
+          </div>
+          {(stripe.state === 'not_connected' || stripe.state === 'finish_setup') && (
+            <button onClick={stripe.connect} disabled={stripe.connecting} className={btnPrimary}>
+              {stripe.connecting ? 'Opening Stripe…' : stripe.state === 'finish_setup' ? 'Finish Stripe setup' : 'Connect Stripe'}
+            </button>
+          )}
+        </section>
+        {stripe.error && <div className={alertError}>{stripe.error}</div>}
 
         {dashboard && (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5">
-              <p className="text-xs text-slate-400 uppercase tracking-wider mb-1 font-semibold flex items-center gap-1.5"><ImageIcon className="w-3.5 h-3.5" /> Portraits</p>
-              <p className="text-3xl font-extrabold text-white">{dashboard.totals.portraits}</p>
+          <section className="grid grid-cols-2 gap-4">
+            <div className={card}>
+              <p className={muted}>Sales today</p>
+              <p className="text-3xl font-bold">{dashboard.today.sales}</p>
             </div>
-            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5">
-              <p className="text-xs text-slate-400 uppercase tracking-wider mb-1 font-semibold flex items-center gap-1.5"><Banknote className="w-3.5 h-3.5" /> Revenue (after fees)</p>
-              <p className="text-3xl font-extrabold text-emerald-400">{money(dashboard.totals.revenue)}</p>
+            <div className={card}>
+              <p className={muted}>Earned today</p>
+              <p className="text-3xl font-bold text-green-700">{fmt(dashboard.today.earned)}</p>
             </div>
-            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5">
-              <p className="text-xs text-slate-400 uppercase tracking-wider mb-1 font-semibold flex items-center gap-1.5"><Package className="w-3.5 h-3.5" /> Print orders</p>
-              <p className="text-3xl font-extrabold text-sky-400">{dashboard.totals.printOrders}</p>
+            <div className={`${card} col-span-2`}>
+              <p className={muted}>Total earned (after fees)</p>
+              <p className="text-2xl font-bold">{fmt(dashboard.totals.revenue)}</p>
             </div>
-          </div>
+          </section>
         )}
 
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div>
-            <h2 className="text-2xl font-bold text-white tracking-tight">Your Events</h2>
-            <p className="text-sm text-slate-400">Manage live portrait events, customer claim codes, and sales</p>
-          </div>
-          <Link
-            href="/events/new"
-            className="bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-medium px-5 py-3 rounded-xl flex items-center gap-2 shadow-lg shadow-sky-500/20 transition-all"
-          >
-            <Plus className="w-5 h-5" />
-            Create Event
-          </Link>
-        </div>
+        <section className="space-y-3">
+          <h2 className={h2}>Recent sales</h2>
+          {dashboard && dashboard.recentSales.length === 0 ? (
+            <p className={muted}>No sales yet. Tap New sale to make your first one.</p>
+          ) : (
+            <ul className="space-y-3">
+              {dashboard?.recentSales.map((s) => (
+                <li key={s.artworkId} className={`${card} !p-4 flex items-center justify-between gap-3`}>
+                  <div className="min-w-0">
+                    <p className="font-semibold truncate">{s.name}</p>
+                    <p className={muted}>
+                      {fmt(s.price, s.currency)} ·{' '}
+                      <span className={s.paid ? 'text-green-700 font-medium' : 'text-amber-800 font-medium'}>
+                        {s.paid ? 'Paid' : 'Unpaid'}
+                      </span>
+                    </p>
+                  </div>
+                  {!s.paid && (
+                    <Link
+                      href={`/sell?t=${encodeURIComponent(s.claimToken)}&c=${encodeURIComponent(s.claimCode)}&n=${encodeURIComponent(s.name)}`}
+                      className={`${btnSecondary} shrink-0`}
+                    >
+                      <QrCode className="w-5 h-5" /> Show QR
+                    </Link>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
 
-        {events.length === 0 ? (
-          <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-12 text-center max-w-md mx-auto">
-            <div className="w-16 h-16 bg-slate-800 rounded-2xl flex items-center justify-center text-slate-500 mx-auto mb-4">
-              <Calendar className="w-8 h-8" />
-            </div>
-            <h3 className="text-lg font-semibold text-white mb-1">No events created yet</h3>
-            <p className="text-sm text-slate-400 mb-6">
-              Create an event to generate a stable QR code for your live iPad drawing booth.
-            </p>
-            <Link
-              href="/events/new"
-              className="inline-flex items-center gap-2 text-sm font-medium text-sky-400 hover:text-sky-300"
-            >
-              Create your first event <ArrowRight className="w-4 h-4" />
+        <section className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className={h2}>Events</h2>
+            <Link href="/events/new" className={btnSecondary}>
+              Create event
             </Link>
           </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {[...upcoming, ...past].map((event) => (
-              <div
-                key={event._id}
-                className="bg-slate-900/90 border border-slate-800 hover:border-slate-700 rounded-2xl p-6 transition-all flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex items-center justify-between mb-4">
-                    {past.includes(event) ? (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-slate-800 text-slate-400 border border-slate-700">
-                        Past
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                        Upcoming
-                      </span>
-                    )}
-                    <span className="text-xs text-slate-500">
-                      {event.eventDate ? new Date(event.eventDate).toLocaleDateString() : 'Today'}
-                    </span>
+          {events.length === 0 ? (
+            <p className={muted}>Selling at a wedding or market? Create an event to group your sales.</p>
+          ) : (
+            <ul className="space-y-3">
+              {events.map((event) => (
+                <li key={event._id} className={`${card} !p-4 flex items-center justify-between gap-3`}>
+                  <div className="min-w-0">
+                    <p className="font-semibold truncate">{event.title}</p>
+                    <p className={muted}>
+                      {event.portraits} drawings · {fmt(event.revenue, event.currency)}
+                    </p>
                   </div>
-
-                  <h3 className="text-xl font-bold text-white mb-2">{event.title}</h3>
-                  
-                  <div className="space-y-2 mb-6">
-                    <div className="flex items-center justify-between text-xs text-slate-400 bg-slate-950/60 px-3 py-2 rounded-lg border border-slate-800/80">
-                      <span>Digital price</span>
-                      <span className="font-semibold text-slate-200">{(event.digitalPrice / 100).toLocaleString('en-GB', { style: 'currency', currency: event.currency || 'gbp' })}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-xs text-slate-400 bg-slate-950/60 px-3 py-2 rounded-lg border border-slate-800/80">
-                      <span>Portraits / prints</span>
-                      <span className="font-semibold text-slate-200">{event.portraits} / {event.prints}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-xs text-slate-400 bg-slate-950/60 px-3 py-2 rounded-lg border border-slate-800/80">
-                      <span>Revenue</span>
-                      <span className="font-semibold text-emerald-400">{money(event.revenue)}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="pt-4 border-t border-slate-800/80 flex items-center justify-between gap-3">
-                  <Link
-                    href={`/events/${event.slug}`}
-                    className="flex-1 bg-slate-800 hover:bg-slate-700 text-white font-medium py-2.5 px-4 rounded-xl text-sm flex items-center justify-center gap-2 transition-colors"
-                  >
-                    Control Room <ArrowRight className="w-4 h-4" />
+                  <Link href={`/events/${event.slug}`} className={`${btnSecondary} shrink-0`}>
+                    Open <ArrowRight className="w-4 h-4" />
                   </Link>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       </main>
     </div>
   );

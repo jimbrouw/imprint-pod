@@ -1,11 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import Link from 'next/link';
-import { CheckCircle2, Download, Package, Mail, ArrowRight, RefreshCw, AlertCircle } from 'lucide-react';
-
-import { Suspense } from 'react';
+import { CheckCircle2, Download, Package, Mail, RefreshCw, AlertCircle } from 'lucide-react';
+import { page, card, h1, h2, muted, btnPrimary, btnSecondary } from '@/components/ui';
 
 function CheckoutSuccessContent() {
   const searchParams = useSearchParams();
@@ -38,13 +36,13 @@ function CheckoutSuccessContent() {
             artworkPage: `/artwork/${data.claimToken}`,
             orderType: data.type,
             productSize: data.productSize,
-            fulfilmentStatus: String(data.fulfilmentStatus || '').replace(/_/g, ' '),
+            emailSent: !!data.receiptSent,
           });
           setLoading(false);
         } else if (++attempts < 8) {
           setTimeout(check, 1500);
         } else {
-          setError('Your payment has not been confirmed yet. If you were charged, you will get an email shortly.');
+          setError('Your payment has not been confirmed yet. If you were charged, please wait a minute and refresh this page.');
           setLoading(false);
         }
       } catch (err: any) {
@@ -61,77 +59,55 @@ function CheckoutSuccessContent() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-400 gap-3">
-        <RefreshCw className="w-8 h-8 animate-spin text-sky-400" />
-        <p>Verifying payment with Stripe...</p>
+      <div className={`${page} flex flex-col items-center justify-center gap-3 ${muted}`}>
+        <RefreshCw className="w-8 h-8 animate-spin text-brand-600" />
+        <p>Confirming your payment…</p>
       </div>
     );
   }
 
   if (error || !orderDetails) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 max-w-md text-center space-y-3">
-          <AlertCircle className="w-12 h-12 text-amber-400 mx-auto" />
-          <h2 className="text-xl font-bold text-white">Payment not confirmed</h2>
-          <p className="text-sm text-slate-400">{error || 'We could not find your order.'}</p>
+      <div className={`${page} flex items-center justify-center p-4`}>
+        <div className={`${card} max-w-md text-center space-y-3`}>
+          <AlertCircle className="w-10 h-10 text-amber-600 mx-auto" />
+          <h1 className={h2}>Payment not confirmed</h1>
+          <p className={muted}>{error || 'We could not find your order.'}</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-8 flex items-center justify-center">
-      <div className="w-full max-w-lg bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl backdrop-blur-md text-center space-y-6">
-        <div className="w-16 h-16 bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-3xl flex items-center justify-center mx-auto shadow-xl shadow-emerald-500/10">
-          <CheckCircle2 className="w-10 h-10" />
-        </div>
+    <div className={`${page} flex items-center justify-center p-4`}>
+      <div className="w-full max-w-md space-y-5 text-center">
+        <CheckCircle2 className="w-14 h-14 text-green-600 mx-auto" />
+        <h1 className={h1}>Thank you, payment received</h1>
 
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-white">Payment Confirmed!</h1>
-          <p className="text-sm text-slate-400 mt-1">Thank you for supporting your live portrait artist.</p>
-        </div>
-
-        {/* Digital Download Action */}
-        {orderDetails?.downloadUrl ? (
-          <div className="bg-slate-950 p-6 rounded-2xl border border-slate-800 space-y-4">
-            <div className="flex items-center justify-center gap-2 text-xs font-semibold text-emerald-400 uppercase tracking-wider">
-              <Download className="w-4 h-4" /> Ready for High-Res Download
-            </div>
-
-            <a
-              href={orderDetails.downloadUrl}
-              download
-              className="w-full bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-bold py-4 px-6 rounded-2xl shadow-xl shadow-sky-500/20 text-base transition-all flex items-center justify-center gap-2"
-            >
-              <Download className="w-5 h-5" /> Download Full-Resolution Artwork
-            </a>
-          </div>
+        {orderDetails.downloadUrl ? (
+          <a href={orderDetails.downloadUrl} download className={`${btnPrimary} w-full`}>
+            <Download className="w-5 h-5" /> Download your drawing
+          </a>
         ) : (
-          <div className="bg-slate-950 p-6 rounded-2xl border border-slate-800 text-slate-400 text-sm">
-            <a href={orderDetails?.artworkPage} className="text-sky-400 underline">View your artwork page</a>
-          </div>
+          <a href={orderDetails.artworkPage} className={`${btnSecondary} w-full`}>
+            View your drawing
+          </a>
         )}
 
-        {/* Print Order Status if applicable */}
-        {orderDetails?.orderType === 'print' && (
-          <div className="bg-slate-950 p-6 rounded-2xl border border-slate-800 text-left space-y-3">
-            <div className="flex items-center justify-between text-xs font-semibold text-indigo-400 uppercase tracking-wider">
-              <span className="flex items-center gap-1.5"><Package className="w-4 h-4" /> Print Fulfillment</span>
-              <span className="px-2.5 py-0.5 bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 rounded-full">
-                {orderDetails.fulfilmentStatus || 'Submitted'}
-              </span>
-            </div>
-
-            <p className="text-xs text-slate-300">
-              Your <span className="font-bold text-white">{orderDetails.productSize}</span> print order has been submitted to our archival print laboratory (Prodigi). Tracking updates will be sent via email.
+        {orderDetails.orderType === 'print' && (
+          <div className={`${card} text-left space-y-2`}>
+            <p className="flex items-center gap-2 font-semibold">
+              <Package className="w-5 h-5" /> Your {orderDetails.productSize} print is on its way to the printer
             </p>
+            <p className={muted}>We&apos;ll email you when it ships.</p>
           </div>
         )}
 
-        <div className="flex items-center justify-center gap-2 text-xs text-slate-500 pt-4 border-t border-slate-800">
-          <Mail className="w-4 h-4 text-slate-400" /> Receipt sent to your email address
-        </div>
+        {orderDetails.emailSent && (
+          <p className={`flex items-center justify-center gap-2 ${muted}`}>
+            <Mail className="w-5 h-5" /> We&apos;ve emailed you a link
+          </p>
+        )}
       </div>
     </div>
   );
@@ -139,12 +115,13 @@ function CheckoutSuccessContent() {
 
 export default function CheckoutSuccessPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-400 gap-3">
-        <RefreshCw className="w-8 h-8 animate-spin text-sky-400" />
-        <p>Loading checkout session...</p>
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div className={`${page} flex items-center justify-center ${muted}`}>
+          <RefreshCw className="w-8 h-8 animate-spin text-brand-600" />
+        </div>
+      }
+    >
       <CheckoutSuccessContent />
     </Suspense>
   );

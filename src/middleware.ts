@@ -1,7 +1,7 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 
-// Artist-only areas require sign-in. Public: /, /e/*, /artwork/*, /checkout/*, /api/public/*, /api/checkout*, /api/webhooks/*.
-const isProtected = createRouteMatcher(['/dashboard(.*)', '/events(.*)', '/admin(.*)']);
+// Artist-only areas require sign-in. Public: /, /terms, /privacy, /refunds, /e/*, /artwork/*, /checkout/*, /api/public/*, /api/checkout*, /api/webhooks/*.
+const isProtected = createRouteMatcher(['/dashboard(.*)', '/events(.*)', '/sell(.*)', '/admin(.*)']);
 
 export default clerkMiddleware(async (auth, req) => {
   if (isProtected(req)) await auth.protect();

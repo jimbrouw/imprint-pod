@@ -1,12 +1,13 @@
 {
-  "name": "imprint-pod",
+  "name": "drawn-checkout",
   "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test": "vitest run"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.5.22",
@@ -23,19 +24,15 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
-    "@babel/core": "^8.0.1",
-    "@babel/plugin-transform-runtime": "^8.0.1",
-    "@babel/preset-react": "^8.0.1",
-    "@babel/runtime": "^8.0.0",
     "@types/node": "^22.13.4",
     "@types/qrcode": "^1.5.5",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
-    "@vitejs/plugin-react": "4.3.4",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.5.2",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.3",
-    "vite": "5.4.14"
+    "vite": "^7.3.8",
+    "vitest": "^5.1.0"
   }
 }
