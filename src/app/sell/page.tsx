@@ -162,7 +162,7 @@ function SellContent() {
   if (!sale && stripe.state !== 'ready') {
     return (
       <div className={page}>
-        <main className="w-full max-w-md mx-auto px-4 py-6">
+        <main className="w-full max-w-md md:max-w-xl mx-auto px-4 py-6">
           {header}
           <div className={`${card} space-y-4`}>
             <h1 className={h2}>{stripe.state === 'loading' ? 'Checking your payment setup…' : 'Set up payouts first'}</h1>
@@ -184,7 +184,7 @@ function SellContent() {
   if (sale) {
     return (
       <div className={page}>
-        <main className="w-full max-w-md mx-auto px-4 py-6 space-y-5 text-center">
+        <main className="w-full max-w-md md:max-w-xl mx-auto px-4 py-6 space-y-5 text-center">
           {header}
           <h1 className={h1}>
             <Check className="inline w-7 h-7 text-green-700 mr-1" />
@@ -192,7 +192,7 @@ function SellContent() {
           </h1>
           <div className={`${card} space-y-4`}>
             {qr ? (
-              <img src={qr} alt="QR code for the buyer" className="w-full max-w-xs mx-auto" />
+              <img src={qr} alt="QR code for the buyer" className="w-full max-w-xs md:max-w-sm mx-auto" />
             ) : (
               <div className="h-64 flex items-center justify-center text-stone-600">Making QR code…</div>
             )}
@@ -235,7 +235,7 @@ function SellContent() {
 
   return (
     <div className={page}>
-      <main className="w-full max-w-md mx-auto px-4 py-6 space-y-5">
+      <main className="w-full max-w-md md:max-w-xl mx-auto px-4 py-6 space-y-5">
         {header}
         <h1 className={h1}>New sale</h1>
         {error && (
