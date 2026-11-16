@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
-import { getStripe } from '@/lib/stripe';
+import { stripeV2, isV2AccountReady } from '@/lib/stripe';
 import { convexServer, serverSecret } from '@/lib/convex-server';
 import { api } from '../../../../../convex/_generated/api';
 
@@ -18,8 +18,10 @@ export async function GET() {
     const artist = await convex.query(api.artists.serverGetArtist, { secret, userId });
     if (!artist?.stripeAccountId) return NextResponse.json({ connected: false, complete: false });
 
-    const account = await getStripe().accounts.retrieve(artist.stripeAccountId);
-    const complete = !!account.details_submitted && !!account.charges_enabled;
+    const account = await stripeV2(
+      `/v2/core/accounts/${artist.stripeAccountId}?include=configuration.merchant&include=configuration.recipient`
+    );
+    const complete = isV2AccountReady(account);
     if (complete !== artist.stripeOnboardingComplete) {
       await convex.mutation(api.artists.serverSetOnboardingStatus, {
         secret,

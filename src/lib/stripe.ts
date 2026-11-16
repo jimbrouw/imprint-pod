@@ -53,3 +53,35 @@ export function calculatePlatformFee(amount: number, type: 'digital' | 'print', 
     printCost: Number.isFinite(cost) ? cost : defaultCost,
   });
 }
+
+const V2_VERSION = '2026-10-28.endive';
+
+/** Minimal client for Stripe's v2 API (Accounts v2). Uses fetch so the pinned SDK version doesn't matter. */
+export async function stripeV2<T = any>(
+  path: string,
+  opts: { method?: 'GET' | 'POST'; body?: unknown } = {}
+): Promise<T> {
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) throw new Error('STRIPE_SECRET_KEY is not set');
+  const res = await fetch(`https://api.stripe.com${path}`, {
+    method: opts.method ?? 'GET',
+    headers: {
+      Authorization: `Bearer ${key}`,
+      'Stripe-Version': V2_VERSION,
+      ...(opts.body ? { 'Content-Type': 'application/json' } : {}),
+    },
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+    cache: 'no-store',
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error?.message || `Stripe v2 request failed (${res.status})`);
+  return data as T;
+}
+
+/** An Accounts v2 connected account can take card payments and receive transfers. */
+export function isV2AccountReady(account: any): boolean {
+  const cfg = account?.configuration;
+  const card = cfg?.merchant?.capabilities?.card_payments?.status;
+  const transfers = cfg?.recipient?.capabilities?.stripe_balance?.stripe_transfers?.status;
+  return card === 'active' && transfers === 'active';
+}
