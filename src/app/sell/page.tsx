@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { useMutation } from 'convex/react';
+import { useMutation, useConvexAuth } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import type { Id } from '../../../convex/_generated/dataModel';
 import { Camera, Check, Copy, Share2, RefreshCw, AlertCircle, ArrowLeft } from 'lucide-react';
@@ -23,6 +23,7 @@ function SellContent() {
   const router = useRouter();
   const search = useSearchParams();
 
+  const { isAuthenticated } = useConvexAuth();
   const getOrCreateDefault = useMutation(api.events.getOrCreateDefault);
   const presignArtworkUpload = useMutation(api.artworks.presignArtworkUpload);
   const completePreview = useMutation(api.artworks.completePreview);
@@ -52,11 +53,13 @@ function SellContent() {
     } catch {}
   }, []);
 
+  // Wait until Convex has the Clerk token, otherwise the mutation races auth on a fresh page load.
   useEffect(() => {
+    if (!isAuthenticated) return;
     getOrCreateDefault({})
       .then((e) => setEvent({ eventId: e.eventId, currency: e.currency }))
       .catch(() => setError('Could not load your account. Please refresh.'));
-  }, [getOrCreateDefault]);
+  }, [getOrCreateDefault, isAuthenticated]);
 
   // Re-show an existing sale (linked from the dashboard).
   useEffect(() => {
