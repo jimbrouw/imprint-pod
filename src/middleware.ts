@@ -1,9 +1,11 @@
-import { clerkMiddleware } from '@clerk/nextjs/server';
+import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 
-// Middleware runs but does NOT force-protect any routes.
-// Individual pages use useUser() / auth() to gate content.
-// Public routes (e/*, artwork/*, sign-in/*, sign-up/*) are open by design.
-export default clerkMiddleware();
+// Artist-only areas require sign-in. Public: /, /terms, /privacy, /refunds, /e/*, /artwork/*, /checkout/*, /api/public/*, /api/checkout*, /api/webhooks/*.
+const isProtected = createRouteMatcher(['/dashboard(.*)', '/events(.*)', '/sell(.*)', '/admin(.*)']);
+
+export default clerkMiddleware(async (auth, req) => {
+  if (isProtected(req)) await auth.protect();
+});
 
 export const config = {
   matcher: [
