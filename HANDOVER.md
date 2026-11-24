@@ -1,123 +1,81 @@
-# Drawn Checkout — Handover for Review & Upgrade
+# Drawn Checkout: system handover
 
-Written 2026-11-11 for a fresh reviewer (human or model). Everything here is grounded in the code on branch `claude/returning-after-time-away-cf1749` (PR #2 into `main`). **Nothing has been tested end to end.** The MVP was built "yolo, no testing" at the owner's request, so treat every flow as unverified until you run it.
+Last updated 2026-11-24. This is the single document a new person or model should read first. It reflects `main` after PRs 1-7. For the launch steps see `GO-LIVE.md`. For commands and the manual test see `README.md`.
 
-> Naming: the repo/folder is `Imprint-pod` and much of the UI/copy still says "Imprint-POD". The product is being rebranded **Drawn Checkout** (domain **drawncheckout.com**, bought on Cloudflare, served by Vercel). The rename in code/UI has NOT been done yet.
+> The repo and folder are still called `Imprint-pod`; the product is **Drawn Checkout** (drawncheckout.com). Do not rename the repo, the Convex deployment or env var names.
 
----
+## 1. What it is
 
-## 1. What the product is
+"Draw it. Share a link. Get paid." An artist (caricature, sketch, illustration, any image seller) uploads an image, shows the buyer a QR code or link, and the buyer sees a watermarked preview, pays, and downloads the original on their phone. Money goes straight to the artist through Stripe Connect; the platform keeps an application fee.
 
-A checkout for **live portrait artists** (caricature, silhouette, sketch artists working at events: weddings, markets, parties).
-
-- **The paying customer of the platform is the artist**, not the sitter. The artist uses the app; the person being drawn is the artist's customer.
-- The artist draws someone at an event, photographs/scans the drawing, and uploads it. The sitter gets a **claim code / link** (scan or type it), sees a **watermarked preview**, and can buy:
-  - a **digital** copy (instant download of the full-resolution original), or
-  - a **physical print** (A5 / A4 / A3) printed and posted by a print-on-demand partner (Prodigi).
-- Money goes **directly to the artist** via Stripe Connect (destination charges). The platform keeps an **application fee**.
-- Digital delivery, UK-first (currency default GBP, shipping default country GB). No one has to be physically present to "collect" anything.
-
-### Roles
-| Role | What they do |
-|---|---|
-| Artist | Signs in (Clerk), connects Stripe, creates events, uploads drawings per sitter, sees dashboard/earnings |
-| Sitter / customer | No account. Uses claim code/link, previews, pays via Stripe Checkout, downloads |
-| Platform admin | Sees all artists/events/orders/revenue/fees at `/admin` |
-
----
+- **The platform's customer is the artist.** The buyer has no account.
+- Product decisions already made: **digital only at launch** (prints exist but are hidden behind a flag), light theme, UK / GBP first.
+- Artist surfaces: `/sell` (quick sale, the main flow), `/dashboard`, and optional events (`/events/*`) for event work. `/admin` is for the platform owner.
 
 ## 2. Stack
 
-- **Next.js 15.5.29** (App Router), React 19, Tailwind
-- **Convex** (DB, file storage, server functions). Dev deployment: `accurate-mole-754` (eu-west-1)
-- **Clerk** (auth). Still a **dev instance** (`sweeping-dog-89.clerk.accounts.dev`); JWT template named `convex`
-- **Stripe** Connect Express, destination charges + `application_fee_amount`, Stripe Checkout, API version 2026-05-27.dahlia
-- **Prodigi** (print on demand), **Resend** (receipt email, REST)
-- **Vercel** hosting; **Cloudflare** domain/DNS (CNAME must be "DNS only", grey cloud)
+| Part | Use |
+|---|---|
+| Next.js 15.5.29 (App Router), React 19, Tailwind 3 | App and API routes, hosted on Vercel |
+| Convex | Database, file storage, server functions (dev deployment `accurate-mole-754`, eu-west-1; also backs drawncheckout.com) |
+| Clerk | Sign-in. JWT template named `convex`. Still a **dev instance** |
+| Stripe Connect Express, destination charges | `application_fee_amount` kept by platform. Connected accounts use the **Accounts v2 API** |
+| Resend | Receipt and resend-link email (REST). Skipped silently without a key |
+| Prodigi | Print on demand. Off by default |
+| Vercel + Cloudflare | Hosting; domain DNS (CNAME must be "DNS only") |
 
----
+## 3. Main flows
 
-## 3. End-to-end flow
-
-1. **Artist signs in** (Clerk). Middleware (`src/middleware.ts`) protects `/dashboard`, `/events`, `/admin`.
-2. **Dashboard** (`src/app/dashboard/page.tsx`): stats, upcoming/past events, **Connect Stripe** button → `POST /api/connect/onboard` creates an Express account and returns the onboarding link; `/api/connect/status` syncs completion status.
-3. **Create event** (`src/app/events/new/page.tsx`): title, optional logo (uploaded to Convex storage), digital price (100–100000 minor units) and print prices. Random slug. Public page at `/e/[slug]`.
-4. **Upload per sitter** (`src/app/events/[eventId]/upload/page.tsx`): client generates a **watermarked preview** (fast, ≤6 MB) and uploads the **original** (≤25 MB, PNG/JPEG) in the background with retry. Convex `presignArtworkUpload` returns two upload URLs; `completePreview` / `completeOriginal` finalise. A customer gets a 32-char-alphabet **claim code** and a long **claim token**.
-5. **Sitter claims**: `/e/[slug]` takes the claim code → `POST /api/public/events/[slug]/claim` (simple throttle) → returns the claim token → `/artwork/[claimToken]`.
-6. **Purchase page** (`src/app/artwork/[claimToken]/page.tsx`): shows watermarked preview, prices, digital vs print (size + shipping address). Calls `POST /api/checkout`.
-7. **`/api/checkout`**: validates with zod, `orders.serverCreateOrder` (prices come from the DB, never the client; checks artist is Stripe-ready and original is uploaded), creates a Stripe Checkout Session with `payment_intent_data.transfer_data.destination` = artist account and `application_fee_amount` from `calculatePlatformFee`, then `serverAttachSession`.
-8. **Payment completes** → two paths into the same idempotent function `fulfilCheckoutSession` (`src/lib/fulfil.ts`):
-   - Stripe webhook `POST /api/webhooks/stripe`
-   - Success page polling `GET /api/checkout/session` (`src/app/checkout/success/page.tsx`)
-   It marks the order paid, flips digital artwork to `paid`, sends a Resend receipt, and for prints submits a Prodigi order.
-9. **Download**: `GET /api/artworks/[claimToken]/download` streams the original **only if paid**.
-10. **Prodigi callback**: `POST /api/webhooks/prodigi?secret=PRODIGI_WEBHOOK_SECRET` updates fulfilment status.
-11. **Refunds**: `charge.refunded`-type handling → `serverMarkRefunded` revokes digital access.
-
----
+1. **Artist signs up** (Clerk), opens the dashboard, connects Stripe (`POST /api/connect/onboard`, status via `GET /api/connect/status`).
+2. **Quick sale** at `/sell`: choose or photograph an image, set a price (remembered in `localStorage`, minimum £2), optional customer name. A watermarked preview uploads first, the original uploads in the background (`src/lib/upload.ts`). Result: QR code, 6-character code, Copy link, Share. A default hidden event per artist is created by `events.getOrCreateDefault`. Per-artwork `price` overrides the event price.
+3. **Buyer** opens `/artwork/[claimToken]` (or enters the code at `/e/[slug]`, which calls the claim route). Single mobile column: preview, "Pay £X and download", Stripe trust line. Prints only if `NEXT_PUBLIC_PRINTS_ENABLED=true`.
+4. **`POST /api/checkout`** validates, calls `orders.serverCreateOrder` (price from the database, never the client), creates a Stripe Checkout Session with `transfer_data.destination` and `application_fee_amount`. Print sessions add Stripe `shipping_address_collection` (GB).
+5. **Payment completes.** Two paths run the same idempotent `fulfilCheckoutSession` (`src/lib/fulfil.ts`): the Stripe webhook and the success page (`GET /api/checkout/session`). It marks the order paid, sends the receipt, and for prints saves the Stripe address then submits to Prodigi.
+6. **Download:** `GET /api/artworks/[claimToken]/download` streams the original only if the order is paid.
+7. **Refund or dispute** (`charge.refunded`, `charge.dispute.created`) calls `orders.serverMarkRefunded`, which revokes the download. Disputes record `failureMessage: 'Disputed'`.
+8. **Lost link:** the claim page has "Already paid? Email me my link" (`POST /api/public/resend-link`), which never reveals whether an email exists.
 
 ## 4. Code map
 
-**Convex (`convex/`)**
-- `schema.ts` — tables: artists, events, customers, artworks, orders, webhookEvents (+ indexes incl. `by_stripe_account`, `by_payment_intent`, `by_artist`, `by_session`, `by_claim_token`, `by_claim_code`, `by_slug`)
-- `helpers.ts` — `requireServerSecret`, `requireUserId`, `isAdminIdentity`, `randomClaimCode` (crypto), `randomHex`, upload limits/MIME allowlist
-- `artists.ts`, `events.ts`, `customers.ts`, `artworks.ts`, `orders.ts`, `admin.ts`
-- `auth.config.ts` — Clerk issuer from `CLERK_JWT_ISSUER_DOMAIN` (falls back to the dev domain), `applicationID: 'convex'`
-- `_generated/api.d.ts` — **hand-edited** to register new modules; regenerate with `npx convex dev` if it drifts
-- All `server*` functions require a shared `SERVER_SECRET` arg. Only Next API routes (using `ConvexHttpClient`) call them. This secret must be identical in **Convex env and Vercel env**.
+**Convex (`convex/`)** : `schema.ts`; `artists`, `events`, `customers`, `artworks`, `orders`, `admin`; `helpers.ts` (`requireServerSecret`, admin check, claim-code generator); `pricing.ts` (min £2, max £1000, print margin guard, pure and unit-tested); `rateLimit.ts` (fixed-window limiter, `claimAttempts` table); `auth.config.ts`. `_generated/` is generated; never hand-edit, regenerate with `npx convex dev --once`.
 
-**Next.js (`src/`)**
-- `app/api/**` — connect, public/events, checkout, artworks download, webhooks (stripe, prodigi)
-- `app/dashboard`, `app/events/**`, `app/e/[slug]`, `app/artwork/[claimToken]`, `app/checkout/success`, `app/admin`, `app/error.tsx` (shows real error message — debugging aid)
-- `lib/` — `stripe.ts` (lazy `getStripe()`, `calculatePlatformFee(amount,type,size)`, default print costs 600/900/1500 pence), `fulfil.ts`, `prodigi.ts` (mock only when not production), `email.ts`, `convex-server.ts`
-- `components/ConvexClientProvider.tsx` — always builds a client using a placeholder URL when env is missing (so prerender doesn't fail)
+**The `SERVER_SECRET` pattern:** every `server*` Convex function takes a shared secret and is only called from Next API routes via `ConvexHttpClient`. The same value must be in **Convex env and Vercel env**.
 
-**Env vars**: see `.env.example` (Vercel + Convex lists). Do not commit real values.
+**Next.js (`src/`)** : pages and API routes as in section 3; `lib/stripe.ts` (lazy client, `computePlatformFee`, v2 helpers `stripeV2` and `isV2AccountReady`), `lib/fulfil.ts`, `lib/upload.ts`, `lib/useStripeConnect.ts`, `lib/email.ts`, `lib/prodigi.ts`; `components/ui.tsx` (shared class strings), `components/LegalPage.tsx`; `middleware.ts` (protects `/dashboard`, `/events`, `/sell`, `/admin`); `app/manifest.ts` and `app/pwa-icon/[size]` (installable on iPad).
 
----
+**Money rules**
+- Digital fee = `min(amount, max(percent, STRIPE_MIN_FEE))`; percent from `STRIPE_PLATFORM_FEE_BPS` (default 1000 = 10%), minimum fee default 50p. Stripe's processing fee is paid by the platform, so tiny sales would otherwise lose money.
+- Print fee = print cost (`PRINT_COST_*`, including postage) + percent of the remainder, capped at the amount.
+- Print submission is claimed atomically (`orders.serverClaimPrintSubmission`) so a webhook and the success page cannot both order the same print. The order id is Prodigi's idempotency key.
+- Claim route is rate limited in Convex (10/min per IP and event slug). Resend-link: 10/min per IP, 3/hour per email.
 
-## 5. Current state / known blockers
+## 5. Environment variables
 
-**Live now**: drawncheckout.com serves the PR branch build. Sign-in works, dashboard loads, Convex functions deployed, `SERVER_SECRET` matches on both sides. Probes pass on the new domain (public event 200, claim 404 for bad code, checkout 400 "Artwork not found", Stripe webhook 400 "Invalid signature").
+See `.env.example` for the full annotated list. Vercel holds Next env; Convex holds its own (`npx convex env set`). Convex needs `SERVER_SECRET`, `CLERK_JWT_ISSUER_DOMAIN`, `ADMIN_USER_IDS` / `ADMIN_EMAILS`, and for prints `PRINTS_ENABLED=true` plus `PRINT_COST_*`. Vercel marks secrets as sensitive, so they cannot be pulled back out with the CLI.
 
-**Blocker: Stripe Connect.** Clicking Connect Stripe returns: *"You must complete your platform profile to use Connect and create live connected accounts."* Diagnosis:
-- That error is about **live mode**. In Stripe's Setup guide, "Verify your identity" shows **Retry** (not accepted), so live Connect isn't unlocked.
-- Platform profile page also shows an unaccepted "Refunds and chargebacks liability acknowledgement" (required for testmode connected accounts). Owner must accept it (legal acknowledgement; I did not click it).
-- **Recommended path:** switch Vercel `STRIPE_SECRET_KEY` to the **test** key (`sk_test_…`), recreate both webhook destinations in test mode, update `STRIPE_WEBHOOK_SECRET` and `STRIPE_CONNECT_WEBHOOK_SECRET`, redeploy. Unknown whether the current key is live or test: check its prefix.
+## 6. Verified status (be precise)
 
-**Stripe webhooks**: two signing secrets are needed (one destination for "Your account" events → `STRIPE_WEBHOOK_SECRET`; one for "Connected accounts" events → `STRIPE_CONNECT_WEBHOOK_SECRET`). There is a duplicate destination (adventurous-breeze vs playful-euphoria) and it's unknown which secret is in Vercel. The old `imprint-pod-pi.vercel.app` URL is dead (DEPLOYMENT_NOT_FOUND); destinations were moved to the new domain.
+**Tested** (PR 6 records this; run locally against a Stripe **sandbox**): Connect onboarding to payouts "Ready", test payment with card 4242, success page, download, sale shows Paid, `checkout.session.completed` webhook 200, refund then `charge.refunded` webhook 200 then download blocked (403). Also: `tsc`, `next build`, 13 Vitest unit tests (fee maths and price validation).
 
-**Not configured / not done**
-- `ADMIN_USER_IDS` / `ADMIN_EMAILS` (Convex env) → `/admin` is inaccessible until set
-- Resend (`RESEND_API_KEY`, `EMAIL_FROM`, domain verification): receipts won't send
-- Prodigi (`PRODIGI_API_KEY`, real SKUs, `PRINT_COST_*`): SKUs and print costs are **placeholders**; platform fee on prints depends on these
-- `www.drawncheckout.com` record not set up
-- Clerk is a dev instance; needs a production instance on the new domain
-- PR #2 not merged; production serves the branch
-- Old artworks from before the rewrite have no originals (customer "11" must be re-uploaded)
-- Old Supabase files remain in the repo (dead code)
-- UI/copy rebrand from Imprint-POD to Drawn Checkout not done (Clerk heading, titles, metadata)
+**Not tested:** live mode of any kind; the deployed site with a live key; disputes; the resend-link email; prints and Prodigi; rate limits beyond unit level; the iPad install (Add to Home Screen) and the `/sell` layout on a real iPad; receipt email delivery (needs Resend).
 
-**Untested end to end**: create event, upload (preview + original), claim, Stripe Checkout with test card `4242 4242 4242 4242`, download, webhooks, receipt email, Prodigi submission, refunds, admin.
+**Known risks**
+- Connect now uses Accounts v2. The webhook still handles the v1 event `account.updated`; v2 accounts may emit different events. Readiness is also polled by `/api/connect/status` on dashboard load, so the artist-facing state should be right, but check this in test mode.
+- Legal pages are a template for a UK sole trader, not legal advice.
+- Original upload runs in the background and stops if the artist leaves the screen. The UI warns, and buyers cannot pay until the original is saved.
+- Old artworks from before the rewrite have no originals.
+- `package-lock.json` was removed (Vercel OS mismatch fix), so installs are not locked.
 
----
+## 7. Current blockers (see `GO-LIVE.md`)
 
-## 6. Review asks for the next model
+- Stripe **live** identity verification failed and then hit the retry lockout. Test mode needs none of this.
+- Live webhooks and live key are not confirmed in Vercel.
+- Resend, `ADMIN_EMAILS`, and Clerk production are not set up.
 
-Please review and upgrade, in roughly this order:
+## 8. Practical notes
 
-1. **Correctness & money safety.** Read `convex/orders.ts`, `src/app/api/checkout/route.ts`, `src/lib/fulfil.ts`, `src/app/api/webhooks/stripe/route.ts`. Check idempotency, webhook dedupe (`webhookEvents`), race between webhook and success page, application fee maths (fee must never exceed amount; check print cost handling), refund/dispute handling, currency handling, and the server-secret pattern.
-2. **Security.** Claim-token and claim-code guessability, throttle in the claim route (in-memory throttles don't work across serverless instances), upload validation (MIME is checked via storage metadata, but is content actually an image?), download gating, admin gating, error messages leaking internals, CSRF/abuse on public routes.
-3. **Customer UX (the sitter).** Mobile-first. Scan/enter code → preview → pay → download should take seconds. Questions: Is the watermark good enough? Is the print flow (address form, size choice) clear? What happens on failed/cancelled payment, expired session, "still being prepared" state, wrong code? Add order confirmation, resend-download-link, accessibility.
-4. **Artist UX.** Faster upload at an event (batch/camera capture, offline tolerance, poor signal), QR code generation per sitter, big-touch UI, clear Stripe onboarding states, earnings/payout view, event editing, unpublish.
-5. **Front-end UI/brand.** Rebrand to Drawn Checkout; design system; landing page; empty/loading/error states; replace the error boundary's raw messages with friendly ones for production.
-6. **Product questions to challenge.** Fee structure, whether prints are worth the operational complexity at MVP, whether sitters should be able to enter an email upfront, tipping, bundles, multiple artworks per sitter, group portraits, refunds policy, GDPR/consent (`consentMarketing` exists but isn't surfaced), VAT.
-7. **Engineering hygiene.** There are essentially no tests. Add at least unit tests for fee/price logic and idempotent fulfilment, plus a Playwright happy path using Stripe test mode. Remove Supabase leftovers, fix the hand-edited `_generated/api.d.ts`, and tidy `.env.example`.
-
-## 7. Practical notes
-- Git: branch `claude/returning-after-time-away-cf1749`, PR #2; main branch is `main`.
-- Deploying Convex: `npx convex dev --once` (needs `.env.local` with the Convex config; it's gitignored). `npx convex deploy` fails without `CONVEX_DEPLOYMENT`.
-- Vercel env changes need a redeploy. Vercel sometimes asks for an authenticator code on env edits (the owner enters it).
-- Set Convex env with `npx convex env set NAME value` (real values, not placeholders).
-- Stripe test card: 4242 4242 4242 4242, any future expiry, any CVC.
-- The owner is not deeply technical in infra: give step-by-step instructions and prefer doing browser configuration via Claude in Chrome when logged in.
+- Commands: `npm run dev`, `npm run build`, `npx tsc --noEmit`, `npm test`, `npx convex dev --once` (needs `.env.local` with `CONVEX_DEPLOYMENT`; it is git-ignored).
+- Test card `4242 4242 4242 4242`, any future expiry, any CVC. Test mode only.
+- Branches: work happens on feature branches into `main`; Vercel deploys `main` to production and builds a preview per branch.
+- The owner is not deeply technical in infrastructure: give step-by-step instructions, and do not enter the owner's credentials, ID documents or payment details for them.
+- Never touch Stripe, Clerk, Vercel, Cloudflare or Convex dashboards or env values without the owner asking.
